@@ -14,7 +14,13 @@ Answer `y` to add the marketplace, then pick a scope. Needs Node 18+ and Claude 
 
 ## Use
 
-In Claude Code, just ask: "think this through: should I raise prices or add a cheaper tier?" Claude writes up the thought, starts the map in your browser, and brings the decision back into the chat when it finishes. Answer its questions on the map, or press "You decide".
+In Claude Code:
+
+```
+/thinking-system:think should I raise prices or add a cheaper tier?
+```
+
+Claude writes up the thought (adding any facts from your conversation), opens the live map in your browser, brings each question back into the chat, and returns the decision when it finishes. Answer on the map or in the chat, or say "you decide". Asking in plain words ("help me think this through...") often works too, but the command always does.
 
 From a terminal: `node <plugin folder>/bin/think.mjs "your thought"` (`--effort quick|normal|deep`, `--model claude-opus-5-5`, `--hands-off`, `--wait`).
 
