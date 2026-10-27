@@ -1,0 +1,5 @@
+{
+  "name": "thinking-system",
+  "owner": { "name": "Anthoney Q" },
+  "plugins": [{ "name": "thinking-system", "source": "./" }]
+}

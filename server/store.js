@@ -2,9 +2,9 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
-// Run records are deliverables, so they live in the vault next to the project note.
-export const RUNS_DIR = process.env.THINK_RUNS_DIR ||
-  join(homedir(), 'Documents/AnthoneyOS/Personal/Thinking System/runs')
+// Each run keeps its record on disk: THINK_RUNS_DIR, else runsDir in ~/.thinking-system/config.json, else ~/Thinking System/runs.
+const config = (() => { try { return JSON.parse(readFileSync(join(homedir(), '.thinking-system', 'config.json'), 'utf8')) } catch { return {} } })()
+export const RUNS_DIR = process.env.THINK_RUNS_DIR || config.runsDir || join(homedir(), 'Thinking System', 'runs')
 
 const timers = new Map()
 

@@ -1,13 +1,13 @@
 {
   "name": "thinking-system",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "start": "node server/server.js",
-    "app": "vite build && node server/server.js"
+    "build": "vite build && vite build -c vite.server.config.js",
+    "start": "node app/server.mjs",
+    "app": "npm run build && node app/server.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.4",

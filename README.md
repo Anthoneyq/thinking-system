@@ -1,27 +1,33 @@
 # Thinking System
 
-Drop in an incomplete thought; watch a flowchart work it out live; step in at any box.
+Think anything through on a live, branching map. Your question sits in the middle; the system branches out in several directions, comes back together, restates the question, grows the best options further, comes back to ask you what matters, and hands back a decision with one next action.
+
+It runs on your machine and uses your own Claude Code login. Nothing is hosted.
+
+## Install (Claude Code)
 
 ```
-think "which of my businesses first, and what do I automate forever?"
-think notes.md                    # files become the input
-pbpaste | think --effort deep     # --model claude-opus-5-5 | codex | dry ...
+/plugin install thinking-system --marketplace Anthoneyq/thinking-system
 ```
 
-`think` starts the local app on http://localhost:4477 if needed and opens the run. Or `npm run app` and use the home page.
+Answer `y` to add the marketplace, then pick a scope. Needs Node 18+ and Claude Code signed in.
 
-## How a run flows
+## Use
 
-Your thought -> Frame it (stated vs inferred, constraints, unknowns and what to do about each) -> Your input (only questions that change the answer; "You decide" skips) -> Pick methods (from `server/methods.js`, chosen per situation) -> methods in parallel -> Show all, keep 3 -> Enough to commit? (confidence gate: commit, ask, research, or more methods, bounded by effort) -> Skeptic review (one pass) -> Decision.
+In Claude Code, just ask: "think this through: should I raise prices or add a cheaper tier?" Claude writes up the thought, starts the map in your browser, and brings the decision back into the chat when it finishes. Answer its questions on the map, or press "You decide".
 
-At any box: **Stuck / don't get this** (red; explains it plainly and adds a constraint), **Go a level deeper** (a full sub-flow for that box), **Redo from here**. Correcting an inference or picking your own options redoes everything downstream; earlier passes stay viewable.
+From a terminal: `node <plugin folder>/bin/think.mjs "your thought"` (`--effort quick|normal|deep`, `--model claude-opus-5-5`, `--hands-off`, `--wait`).
 
-## Pieces
+On the map, any box can be marked **Stuck / don't get this** (it explains plainly and treats the blocker as a constraint), taken **a level deeper** (a full sub-map), or **redone**. Correcting something it inferred redoes everything after it.
 
-- `server/engine.js` - run state, scheduler, routing after each step, user actions.
-- `server/prompts.js` - system rules, step prompts, strict JSON schemas.
-- `server/models.js` - Claude CLI (lean: no tools/MCP/settings), Codex CLI, dry run.
-- `src/` - React + React Flow view. `shared/layout.js` - dagre layout (also used for Excalidraw export).
-- Runs save to `~/Documents/AnthoneyOS/Personal/Thinking System/runs/<id>/` (`run.json`, `record.md`, `flow-*.excalidraw`). Override with `THINK_RUNS_DIR`.
+A normal run is about 15 model calls and 3-6 minutes; on Sonnet that is roughly $0.50-0.80 of usage on your account.
 
-Log: `~/Library/Logs/thinking-system.log`.
+## How it works
+
+- `server/engine.js`: run state, scheduler and the loop (frame, branch, come together, grow, ask, review, decide).
+- `server/prompts.js`: the rules, step prompts and strict JSON schemas. `server/methods.js`: the 17 thinking methods it chooses from.
+- `server/models.js`: calls `claude -p` lean (no tools, MCP or settings), or Codex, or a dry run.
+- `src/`: React + React Flow. Map view (radial, live) and Steps view.
+- `app/server.mjs` and `dist/` are built files, committed so the plugin runs without `npm install`. Rebuild with `npm install && npm run build`.
+
+Runs save to `~/Thinking System/runs/` (change it with `{"runsDir": "..."}` in `~/.thinking-system/config.json`). Server log: `~/.thinking-system/server.log`.

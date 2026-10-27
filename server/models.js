@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fake } from './dryrun.js'
 
-export const MODELS = [
+const ALL = [
   { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', engine: 'claude', web: true },
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', engine: 'claude', web: true },
   { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', engine: 'claude', web: true },
@@ -12,6 +12,17 @@ export const MODELS = [
   { id: 'codex', label: 'GPT via Codex (your Codex default)', engine: 'codex', web: true },
   { id: 'dry', label: 'Dry run (no AI, sample content)', engine: 'dry', web: false },
 ]
+// Offer only what this machine can run.
+const has = cmd => !spawnSync(cmd, ['--version'], { stdio: 'ignore' }).error
+const ENGINES = { claude: has('claude'), codex: has('codex'), dry: true }
+export const MODELS = ALL.filter(m => ENGINES[m.engine])
+const ALIAS = { sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5', fable: 'claude-fable-5-1', haiku: 'claude-haiku-5-5', gpt: 'codex', 'dry-run': 'dry' }
+export const resolveModel = id => {
+  if (!id) return MODELS[0].id
+  const m = MODELS.find(x => x.id === (ALIAS[id] || id))
+  if (!m) throw new Error(`Unknown or unavailable model "${id}". Use one of: ${MODELS.map(x => x.id).join(', ')}`)
+  return m.id
+}
 export const modelById = id => MODELS.find(m => m.id === id) || MODELS[0]
 
 const TIMEOUT = 6 * 60 * 1000

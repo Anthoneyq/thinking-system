@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { callModel, modelById } from './models.js'
+import { callModel, modelById, resolveModel } from './models.js'
 import { SCHEMAS, SYSTEM, stepPrompt } from './prompts.js'
 import { methodById } from './methods.js'
 import { loadRuns, saveRun, writeRunFile } from './store.js'
@@ -172,7 +172,7 @@ async function start(run, node) {
   const opts = {
     effort: scope === 'root' ? run.effort : 'quick',
     // The opening frame gets one round of questions; the rest are saved for when the branches come back.
-    askAllowed: node.kind === 'frame' ? asksUsed(run, scope) === 0 : asksUsed(run, scope) < E.asks,
+    askAllowed: !run.handsOff && (node.kind === 'frame' ? asksUsed(run, scope) === 0 : asksUsed(run, scope) < E.asks),
     loopsLeft: E.loops - loopsUsed(run, scope),
     researchAllowed: E.loops - loopsUsed(run, scope) > 0,
     web: model.web,
@@ -296,13 +296,15 @@ function after(run, node, E, opts) {
 }
 
 // ---------- public actions ----------
-export function createRun({ input, model, effort }) {
+export function createRun({ input, model, effort, handsOff = false }) {
   const now = new Date()
-  const slug = (input.toLowerCase().match(/[a-z0-9]+/g) || ['thought']).slice(0, 5).join('-').slice(0, 40)
+  const words = input.split('\n').filter(l => !l.startsWith('--- ')).join(' ').toLowerCase().match(/[a-z0-9]+/g)
+  const slug = (words || ['thought']).slice(0, 5).join('-').slice(0, 40)
+  model = resolveModel(model)
   const id = `${now.toISOString().slice(0, 10)}-${slug}-${Math.random().toString(36).slice(2, 6)}`
   const run = {
-    id, title: input.trim().split('\n')[0].slice(0, 70), input, model: modelById(model).id,
-    effort: EFFORT[effort] ? effort : 'normal', createdAt: now.toISOString(), status: 'running',
+    id, title: input.trim().split('\n').find(l => l.trim() && !l.startsWith('--- '))?.slice(0, 70) || 'Thought', input, model,
+    effort: EFFORT[effort] ? effort : 'normal', handsOff: !!handsOff, createdAt: now.toISOString(), status: 'running',
     seq: 0, nodes: {}, order: [], corrections: [], constraints: [], picks: {}, cost: 0, activity: [],
   }
   runs.set(id, run)

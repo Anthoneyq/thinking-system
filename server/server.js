@@ -10,7 +10,9 @@ import { layout } from '../shared/layout.js'
 import { writeRunFile, RUNS_DIR } from './store.js'
 
 const PORT = Number(process.env.THINK_PORT || 4477)
-const DIST = join(dirname(fileURLToPath(import.meta.url)), '../dist')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const DIST = join(ROOT, 'dist')
+const VERSION = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/plugin.json'), 'utf8')).version
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' }
 
 const json = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)) }
@@ -39,13 +41,15 @@ createServer(async (req, res) => {
   try {
     if (parts[0] === 'api') {
       const [, what, id, action] = parts
-      if (what === 'health') return json(res, 200, { ok: true, runsDir: RUNS_DIR })
+      if (what === 'health') return json(res, 200, { ok: true, app: 'thinking-system', version: VERSION, runsDir: RUNS_DIR })
+      if (what === 'shutdown' && req.method === 'POST') { json(res, 200, { ok: true }); return setTimeout(() => process.exit(0), 50) }
       if (what === 'meta') return json(res, 200, { models: MODELS, methods: METHODS.map(({ id, name, when }) => ({ id, name, when })) })
       if (what === 'runs' && !id && req.method === 'GET') return json(res, 200, engine.listRuns())
       if (what === 'runs' && !id && req.method === 'POST') {
         const b = await body(req)
         if (!b.input?.trim()) return json(res, 400, { error: 'Write a thought first' })
-        return json(res, 200, { id: engine.createRun(b).id })
+        const run = engine.createRun(b)
+        return json(res, 200, { id: run.id, dir: join(RUNS_DIR, run.id) })
       }
       const run = engine.getRun(id)
       if (!run) return json(res, 404, { error: 'No such run' })
