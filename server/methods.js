@@ -1,0 +1,42 @@
+// Thinking-method library. The router picks from these per situation; none is mandatory.
+// Sources: untools.co catalog, the Algorithm (Question > Delete > Simplify > Accelerate > Automate), compress.
+
+export const METHODS = [
+  { id: 'possibilities', name: 'Show everything', when: 'Direction is open, or the user may not know what is possible.',
+    how: 'Go wide before narrowing. List many distinct directions, including capabilities or approaches the user probably does not know exist. Mix safe, bold and odd. Each option is a real, different path, not a rewording.' },
+  { id: 'first-principles', name: 'First principles', when: 'Assumptions or "how it is usually done" may be wrong.',
+    how: 'Strip the problem to what is actually true and required. Separate fundamentals from convention. Rebuild an answer from the fundamentals.' },
+  { id: 'inversion', name: 'Inversion / pre-mortem', when: 'A plan exists or is forming; risk of failure matters.',
+    how: 'Assume it failed a year from now. List the most likely causes of failure, then what would prevent each.' },
+  { id: 'second-order', name: 'Second-order effects', when: 'A choice has knock-on consequences over time.',
+    how: 'For each leading option, ask "and then what?" two or three steps out. Note effects on time, money, people, reputation.' },
+  { id: 'six-hats', name: 'Six perspectives', when: 'One viewpoint dominates or emotions and facts are mixed.',
+    how: 'Look through facts, feelings, risks, benefits, new ideas and process. Report only what each view adds.' },
+  { id: 'decision-matrix', name: 'Decision matrix', when: 'Several concrete options must be compared on several criteria.',
+    how: 'Pick the few criteria that matter, weight them, score options. Hard constraints eliminate options before scoring; they are never averaged away. Scores aid judgment, they are not the answer.' },
+  { id: 'eisenhower', name: 'Urgent / important', when: 'A list of tasks or projects needs ordering.',
+    how: 'Sort items into do now, schedule, delegate or automate, drop. Importance means it moves the stated goal.' },
+  { id: 'impact-effort', name: 'Impact vs effort', when: 'Many possible actions, limited time.',
+    how: 'Place each action on impact and effort. Name the quick wins, the big bets, and what to skip.' },
+  { id: 'issue-tree', name: 'Issue tree', when: 'The problem is big or tangled.',
+    how: 'Break the question into non-overlapping sub-questions that together cover it. Mark which branch matters most.' },
+  { id: 'five-whys', name: 'Five whys / iceberg', when: 'A recurring problem or symptom; the cause is unclear.',
+    how: 'Ask why repeatedly to reach structure and root cause, not the visible event. Name the leverage point.' },
+  { id: 'constraints', name: 'Bottleneck', when: 'Progress is stuck or throughput is low.',
+    how: 'Find the single constraint limiting the whole system right now. Everything else waits until it moves.' },
+  { id: 'customer-jobs', name: 'Jobs to be done', when: 'Something is being sold, built or named for other people.',
+    how: 'Describe the job the buyer is hiring this for, what they use today, what makes them switch, and what objections stop them.' },
+  { id: 'algorithm', name: 'The Algorithm', when: 'Something is overbuilt, slow or complicated, or a process will be automated.',
+    how: 'In order: Question each requirement (who asked, is it needed), Delete parts and steps, Simplify what survives, Accelerate it, then Automate. Never automate or speed up something that should be deleted. List what was deleted and what survived, with reasons.' },
+  { id: 'compress', name: 'Compress', when: 'Output or material is long; same meaning should take less.',
+    how: 'Keep the meaning, cut the words. Record what was removed and why so nothing important is silently lost.' },
+  { id: 'reversibility', name: 'Reversibility', when: 'Deciding how carefully to decide.',
+    how: 'Is this a one-way or two-way door? Reversible and cheap means decide fast and test; irreversible and costly means slow down and gather evidence.' },
+  { id: 'small-test', name: 'Smallest test', when: 'The answer depends on evidence nobody has yet.',
+    how: 'Design the cheapest, fastest test that would change the decision. State what result means go, change, or stop.' },
+  { id: 'domain-lens', name: 'Domain check', when: 'The subject has its own standard checks (business, design, training, writing, code...).',
+    how: 'Run the given checks for this domain. Report only checks that reveal something; skip the rest.' },
+]
+
+export const METHOD_IDS = METHODS.map(m => m.id)
+export const methodById = id => METHODS.find(m => m.id === id)
