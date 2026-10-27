@@ -17,11 +17,13 @@ export function summary(n) {
   if (n.kind === 'capture') return o.text
   if (n.kind === 'decide') return o.recommendation
   if (n.kind === 'unstick') return o.plain
-  if (n.kind === 'method') return n.data.focus + ' - ' + o.summary
+  if (n.kind === 'method') return o.summary
+  if (n.kind === 'develop') return `${o.verdict[0].toUpperCase() + o.verdict.slice(1)} - ${o.summary}`
+  if (n.kind === 'converge') return o.question
   return o.summary
 }
 
 export const KIND_LABEL = {
   capture: 'Input', frame: 'Frame', ask: 'You', route: 'Router', method: 'Method', narrow: 'Wide to narrow',
-  assess: 'Confidence gate', research: 'Research', review: 'Adversarial', decide: 'Record', unstick: 'Unstick',
+  assess: 'Confidence gate', converge: 'Come together', develop: 'Grow', research: 'Research', review: 'Adversarial', decide: 'Record', unstick: 'Unstick',
 }

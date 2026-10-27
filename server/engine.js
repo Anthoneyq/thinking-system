@@ -8,7 +8,7 @@ import { recordMarkdown } from './record.js'
 export const bus = new EventEmitter()
 bus.setMaxListeners(100)
 
-// Budgets per effort level. Loops = follow-up passes after the first confidence gate.
+// Budgets per effort level. Loops = growth rounds after the branches first come back together.
 const EFFORT = {
   quick: { methods: 2, loops: 0, asks: 1, review: false },
   normal: { methods: 4, loops: 1, asks: 2, review: true },
@@ -18,7 +18,9 @@ const CONCURRENCY = 3
 const TITLES = {
   capture: 'Your thought', frame: 'Frame it', ask: 'Your input', route: 'Pick methods', narrow: 'Show all, keep 3',
   assess: 'Enough to commit?', review: 'Skeptic review', decide: 'Decision', unstick: 'Plain explanation',
+  converge: 'Come back together',
 }
+const GROW = ['develop', 'research', 'more']
 
 const runs = new Map()
 for (const run of loadRuns()) {
@@ -41,7 +43,25 @@ const inScope = (run, scope) => active(run).filter(n => n.scope === scope)
 const latest = (run, scope, kind) => inScope(run, scope).filter(n => n.kind === kind && n.status === 'done').at(-1)
 const effortOf = (run, scope) => EFFORT[scope === 'root' ? run.effort : 'quick']
 const asksUsed = (run, scope) => inScope(run, scope).filter(n => n.kind === 'ask').length
-const loopsUsed = (run, scope) => inScope(run, scope).filter(n => n.kind === 'route' && n.data.followup).length
+const loopsUsed = (run, scope) => inScope(run, scope).filter(n => n.data.grew || (n.kind === 'route' && n.data.followup && n.data.legacy)).length
+const passOf = (run, scope) => inScope(run, scope).filter(n => n.kind === 'converge').length
+
+// The question as it currently stands: first from the frame, then restated each time the branches come back.
+export function questionTrail(run, scope) {
+  return inScope(run, scope).filter(n => (n.kind === 'frame' || n.kind === 'converge') && n.status === 'done' && n.out.question)
+    .map(n => ({ node: n.id, text: n.out.question, changed: n.out.changed || '' }))
+}
+
+// Which branch surfaced an option, so the tree grows from it. Prefer a branch no sibling has taken yet,
+// so growth spreads in several directions when an option came from many branches.
+const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+function sourceOf(run, scope, option, used) {
+  const methods = inScope(run, scope).filter(n => n.kind === 'method')
+  const hits = (option?.from || []).map(f => methods.find(n => [n.data.method, n.title].some(x => norm(x) === norm(f) || norm(x).includes(norm(f)) || norm(f).includes(norm(x))))).filter(Boolean)
+  const pick = hits.find(m => !used.has(m.id)) || hits[0]
+  if (pick) used.add(pick.id)
+  return pick?.id || null
+}
 
 function log(run, text) {
   run.activity.push({ t: new Date().toISOString(), text })
@@ -97,9 +117,11 @@ function context(run, scope) {
     parts.push(`CURRENT FRAME:\nGoal (${f.goal.source}): ${f.goal.text}\nStated: ${f.stated.join('; ')}\nInferred: ${f.inferred.map(i => i.text).join('; ')}\n` +
       `Constraints: ${f.constraints.map(c => `${c.text}${c.hard ? ' [hard]' : ''}`).join('; ')}\nUnknowns: ${f.unknowns.map(u => `${u.text} -> ${u.action}`).join('; ')}`)
   }
+  const trail = questionTrail(run, scope)
+  if (trail.length) parts.push(`CURRENT QUESTION: ${trail.at(-1).text}` + (trail.length > 1 ? `\nEarlier versions: ${trail.slice(0, -1).map(q => q.text).join(' | ')}` : ''))
   const methods = inScope(run, scope).filter(n => n.kind === 'method' && n.status === 'done')
   if (methods.length) parts.push('METHOD RESULTS:\n' + list(methods, n => [
-    `## ${n.title} (focus: ${n.data.focus})`, n.out.summary,
+    `## ${n.title} [${n.data.method}] (focus: ${n.data.focus})`, n.out.summary,
     ...n.out.findings.map(f => `- [${f.kind}] ${f.text}`),
     n.out.options.length ? 'Options: ' + n.out.options.map(o => `${o.title}: ${o.detail}`).join(' | ') : '',
     n.out.cuts.length ? 'Cut: ' + n.out.cuts.map(c => `${c.what} (${c.why})`).join(' | ') : '',
@@ -108,7 +130,11 @@ function context(run, scope) {
   const research = inScope(run, scope).filter(n => n.kind === 'research' && n.status === 'done')
   if (research.length) parts.push('RESEARCH:\n' + list(research, n => `## ${n.data.query}${n.out.verified ? '' : ' (unverified)'}\n` +
     n.out.findings.map(f => `- ${f.text}${f.source ? ` [${f.source}]` : ''}`).join('\n')))
-  const narrow = latest(run, scope, 'narrow')
+  const developed = inScope(run, scope).filter(n => n.kind === 'develop' && n.status === 'done')
+  if (developed.length) parts.push('DEVELOPED DIRECTIONS:\n' + list(developed, n => `## ${n.data.title} (verdict: ${n.out.verdict})\n${n.out.practice}\nFit: ${n.out.fit}\n` +
+    `Takes: ${n.out.takes.join('; ')}\nRisks: ${n.out.risks.join('; ')}\nTest: ${n.out.test}` +
+    (n.out.sub_options.length ? `\nVariants: ${n.out.sub_options.map(o => o.title).join('; ')}` : '')))
+  const narrow = latest(run, scope, 'converge') || latest(run, scope, 'narrow')
   if (narrow) {
     const byId = Object.fromEntries(narrow.out.all.map(o => [o.id, o]))
     parts.push('SHORTLIST:\n' + list(narrow.out.top, t => `- ${byId[t.id]?.title || t.id}: ${byId[t.id]?.detail || ''} (why: ${t.why})`) +
@@ -145,11 +171,13 @@ async function start(run, node) {
   const model = modelById(run.model)
   const opts = {
     effort: scope === 'root' ? run.effort : 'quick',
-    askAllowed: asksUsed(run, scope) < E.asks,
+    // The opening frame gets one round of questions; the rest are saved for when the branches come back.
+    askAllowed: node.kind === 'frame' ? asksUsed(run, scope) === 0 : asksUsed(run, scope) < E.asks,
     loopsLeft: E.loops - loopsUsed(run, scope),
     researchAllowed: E.loops - loopsUsed(run, scope) > 0,
     web: model.web,
     picks: run.picks[scope],
+    pass: passOf(run, scope),
   }
   try {
     const prompt = stepPrompt(node.kind, node, context(run, scope), opts)
@@ -178,7 +206,7 @@ function after(run, node, E, opts) {
   const s = node.scope
   const o = node.out
   const toReview = deps => add(run, { kind: E.review ? 'review' : 'decide', scope: s, deps })
-  const followup = deps => add(run, { kind: 'route', scope: s, title: 'Fill the gaps', deps, data: { followup: true } })
+  const followup = deps => add(run, { kind: 'route', scope: s, title: 'Fill the gaps', deps, data: { followup: true, legacy: true } })
 
   switch (node.kind) {
     case 'capture':
@@ -196,6 +224,7 @@ function after(run, node, E, opts) {
     case 'ask':
       if (node.data.from === 'frame' && !node.out.skipped) add(run, { kind: 'frame', scope: s, title: 'Reframe', deps: [node.id] })
       else if (node.data.from === 'frame') add(run, { kind: 'route', scope: s, deps: [node.id] })
+      else if (node.data.from === 'converge') add(run, { kind: 'converge', scope: s, title: 'Restate with your answers', deps: [node.id] })
       else followup([node.id])
       break
     case 'route': {
@@ -203,9 +232,29 @@ function after(run, node, E, opts) {
       if (!plan.length && !node.data.followup) plan = [{ method: 'possibilities', focus: 'What directions exist?', why: 'Fallback', checks: [] }]
       const ids = plan.map(p => {
         const m = methodById(p.method)
-        return add(run, { kind: 'method', scope: s, title: m.name, deps: [node.id], data: { method: m.id, name: m.name, how: m.how, focus: p.focus, why: p.why, checks: p.checks } }).id
+        return add(run, { kind: 'method', scope: s, title: m.name, deps: [node.id], data: { method: m.id, name: m.name, how: m.how, focus: p.focus, why: p.why, checks: p.checks, ring: node.data.ring || 1 } }).id
       })
-      add(run, { kind: 'narrow', scope: s, deps: ids.length ? ids : [node.id] })
+      add(run, { kind: 'converge', scope: s, deps: ids.length ? ids : [node.id] })
+      break
+    }
+    case 'converge': {
+      const grow = GROW.includes(o.next) && !o.enough && opts.loopsLeft > 0
+      if (!grow && !o.enough && o.next === 'ask' && o.questions.length && opts.askAllowed)
+        add(run, { kind: 'ask', scope: s, deps: [node.id], status: 'waiting', data: { from: 'converge', questions: o.questions } })
+      else if (grow) {
+        node.data.grew = true
+        const ring = loopsUsed(run, s) + 1
+        const byId = Object.fromEntries(o.all.map(x => [x.id, x]))
+        const used = new Set()
+        let ids = []
+        if (o.next === 'develop') ids = o.top.slice(0, 3).map(t => {
+          const opt = byId[t.id] || { title: t.id, detail: '' }
+          return add(run, { kind: 'develop', scope: s, title: opt.title, deps: [node.id], data: { title: opt.title, detail: opt.detail, why: t.why, parent: sourceOf(run, s, opt, used), ring } }).id
+        })
+        if (o.next === 'research') ids = o.research.slice(0, 3).map(r => add(run, { kind: 'research', scope: s, title: 'Look up: ' + r.query, deps: [node.id], data: { ...r, ring } }).id)
+        if (ids.length) add(run, { kind: 'converge', scope: s, deps: ids })
+        else add(run, { kind: 'route', scope: s, title: 'Find other angles', deps: [node.id], data: { followup: true, ring } })
+      } else toReview([node.id])
       break
     }
     case 'narrow':
@@ -222,7 +271,10 @@ function after(run, node, E, opts) {
       break
     }
     case 'review':
-      if (o.fatal && opts.loopsLeft > 0) followup([node.id])
+      if (o.fatal && opts.loopsLeft > 0) {
+        node.data.grew = true
+        add(run, { kind: 'route', scope: s, title: 'Answer the objections', deps: [node.id], data: { followup: true, ring: loopsUsed(run, s) + 1 } })
+      }
       else add(run, { kind: 'decide', scope: s, deps: [node.id] })
       break
     case 'decide':
@@ -297,7 +349,7 @@ export function rerun(run, { nodeId }) {
   if (n.kind === 'capture') throw new Error('Start a new run to change the thought itself')
   for (const id of descendants(run, [n.id])) run.nodes[id].status = 'superseded'
   // Constraints raised against superseded steps still apply; they are the user's.
-  add(run, { kind: n.kind, scope: n.scope, title: n.title, deps: n.deps, data: n.data, status: n.kind === 'ask' ? 'waiting' : 'queued' })
+  add(run, { kind: n.kind, scope: n.scope, title: n.title, deps: n.deps, data: { ...n.data, grew: undefined }, status: n.kind === 'ask' ? 'waiting' : 'queued' })
   run.paused = false
   log(run, `${n.title}: redoing this step and everything after it`)
   tick(run)
@@ -335,12 +387,13 @@ export function deeper(run, { nodeId, focus = '' }) {
 
 export function pick(run, { nodeId, picks = [], combine = '' }) {
   const n = need(run, nodeId)
-  if (n.kind !== 'narrow' || !n.out) throw new Error('Picks apply to the shortlist step')
+  if (!['narrow', 'converge'].includes(n.kind) || !n.out) throw new Error('Picks apply to the shortlist step')
   const byId = Object.fromEntries(n.out.all.map(o => [o.id, o]))
   run.picks[n.scope] = [...picks.map(id => byId[id]?.title || id), combine && `combine: ${combine}`].filter(Boolean).join('; ')
   n.data.userPicks = picks
-  const next = active(run).find(x => x.deps.includes(n.id))
   log(run, 'You picked: ' + run.picks[n.scope])
+  if (n.kind === 'converge') return rerun(run, { nodeId: n.id })
+  const next = active(run).find(x => x.deps.includes(n.id))
   if (next) return rerun(run, { nodeId: next.id })
   changed(run)
 }

@@ -14,6 +14,7 @@ export const SCHEMAS = {
   frame: obj({
     title: str,
     summary: str,
+    question: str,
     goal: obj({ text: str, source: oneOf('stated', 'inferred', 'unknown') }),
     stated: arr(str),
     inferred: arr(obj({ text: str, why: str })),
@@ -42,6 +43,30 @@ export const SCHEMAS = {
     all: arr(obj({ id: str, title: str, detail: str, from: arr(str) })),
     top: arr(obj({ id: str, why: str })),
     combine: str,
+  }),
+  converge: obj({
+    summary: str,
+    question: str,
+    changed: str,
+    all: arr(obj({ id: str, title: str, detail: str, from: arr(str) })),
+    top: arr(obj({ id: str, why: str })),
+    combine: str,
+    enough: bool,
+    confidence,
+    next: oneOf('commit', 'ask', 'develop', 'research', 'more'),
+    questions: arr(question),
+    research: arr(obj({ query: str, why: str })),
+    stop_reason: str,
+  }),
+  develop: obj({
+    summary: str,
+    practice: str,
+    fit: str,
+    takes: arr(str),
+    risks: arr(str),
+    test: str,
+    verdict: oneOf('strong', 'possible', 'weak'),
+    sub_options: arr(obj({ title: str, detail: str })),
   }),
   assess: obj({
     summary: str,
@@ -114,6 +139,7 @@ Echo back what the user explicitly said in compressed form ("stated"). If they s
 List inferences separately with why you inferred each. Map constraints, evidence, and unknowns; for each unknown say what to do about it (ask the user, research it, test it, decide it yourself, or ignore).
 Name the lenses (subject areas) that apply.
 Questions: only ones whose answer would change the result. blocking = true only if a good answer is impossible without it. ${opts.askAllowed ? 'Up to 5 questions; offer 2-4 short answer options when natural.' : 'Asking is not available now: return questions as an empty list and decide instead.'}
+question: the question this run answers, one plain sentence in the user's terms. If the goal is unknown, the question is about finding it.
 title: 3-6 words naming this run.`
     case 'route':
       return head + `STEP: Choose thinking methods for ${node.data.followup ? 'the remaining gaps (follow-up pass; add only what is still needed, an empty plan is fine)' : 'this situation'}.
@@ -127,6 +153,24 @@ How: ${node.data.how}
 Focus: ${node.data.focus}
 ${node.data.checks?.length ? 'Checks: ' + node.data.checks.join('; ') : ''}
 Report findings (mark each evidence / inference / assumption), options this method surfaces, anything that should be cut and why, risks, and new unknowns. Keep it tight.`
+    case 'converge':
+      return head + `STEP: Come back together (pass ${opts.pass}). The branches so far have reported.
+1. Restate the question in its sharpest current form, given what was learned ("question", one sentence). "changed": what changed from the previous statement of the question in a few words, or "".
+2. Show everything: collect every distinct option surfaced so far into "all" (merge duplicates, short ids o1, o2...; "from" = the method ids exactly as written in the method results, e.g. ["small-test", "algorithm"]). Pick the top 3 or fewer that best serve the goal within the constraints, each with why. If parts combine into something better, describe it in "combine"; else "".
+3. Gate. enough = true when further work is unlikely to change the next action. Otherwise choose next:
+   develop = grow the top options further (what each takes, risks, tests);
+   research = facts can be looked up (max 3 queries);
+   more = different thinking methods are needed;
+   ask = the choice now depends on the user's preferences or facts only they know. Ask them, offering the top options as answer choices where natural.
+Growth rounds left: ${opts.loopsLeft}. If 0, do not choose develop, research or more.${opts.loopsLeft > 0 && opts.pass === 1 ? ' This is the first pass: prefer develop unless the answer is already obvious.' : ''}
+${opts.askAllowed ? 'Asking is available.' : 'Asking is not available; do not choose ask.'}
+If enough, next = commit. Fill questions only for ask and research only for research.
+stop_reason: one sentence on why you stop or continue.
+${opts.picks ? 'The user picked these and their choice wins: ' + opts.picks : ''}`
+    case 'develop':
+      return head + `STEP: Develop one direction: "${node.data.title}" - ${node.data.detail}
+Why it made the shortlist: ${node.data.why}
+Make it concrete: what it looks like in practice ("practice"), how well it serves the goal ("fit"), what it would take (steps, time, money where knowable; never invent precise figures), the main risks, the smallest test, and a verdict (strong, possible, weak). List up to 3 sub_options: variants of this direction worth considering.`
     case 'narrow':
       return head + `STEP: Show everything, then narrow to 3.
 Collect every distinct option surfaced so far into "all" (merge duplicates, keep ids short like o1, o2). Then pick the top 3 (or fewer) that best serve the goal within the constraints, each with why. If parts of several options combine into something better, describe it in "combine"; else "".
@@ -146,7 +190,7 @@ Report only facts relevant to the decision.`
     case 'review':
       return head + `STEP: Adversarial review, one pass. Attack the leading direction as a sharp skeptic would. List real objections only, each with severity and a fix. fatal = true only if the direction should not go ahead as it stands.`
     case 'decide':
-      return head + `STEP: Decision record. recommendation: the call itself in at most two short sentences (under 40 words); details go in reasons. Then the goal it serves, key reasons, tradeoffs, what to cut and why, what stays uncertain, what would change the answer, the single next action with owner (the user, or "AI" if an AI can do it) and when, and the smallest test if one applies (else "").
+      return head + `STEP: Decision record. recommendation: the call itself in at most two short sentences (under 40 words); details go in reasons. Then the goal it serves, key reasons, tradeoffs, what to cut and why, what stays uncertain, what would change the answer, the single next action (next_action.what: one short sentence, under 25 words) with owner (the user, or "AI" if an AI can do it) and when, and the smallest test if one applies (else "").
 title: 3-8 words.`
     case 'unstick':
       return head + `STEP: The user marked the step "${node.data.targetTitle}" as stuck or not understood.

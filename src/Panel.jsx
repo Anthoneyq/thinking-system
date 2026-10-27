@@ -19,7 +19,6 @@ function Overview({ run, scope, act, setSel }) {
   const decide = latest(run, scope, 'decide')
   const frame = latest(run, scope, 'frame')
   const waiting = run.order.map(i => run.nodes[i]).filter(n => n.status === 'waiting')
-  const working = run.order.map(i => run.nodes[i]).filter(n => n.status === 'running')
   return (
     <div className="pane">
       {waiting.length > 0 && (
@@ -27,10 +26,29 @@ function Overview({ run, scope, act, setSel }) {
           <strong>Waiting for you</strong> {waiting[0].title}: answer to continue, or let it decide.
         </button>
       )}
-      {!decide && working.length > 0 && <p className="status-line"><span className="spinner" />Working on {working.map(n => n.title).join(', ')}</p>}
       {decide && <Decision o={decide.out} />}
+      <Trail run={run} scope={scope} setSel={setSel} />
       {frame ? <Frame run={run} frame={frame} act={act} /> : <p className="sub">Framing your thought...</p>}
       <p className="foot sub">Click any box to see its work, mark it stuck, go a level deeper, or redo it.</p>
+    </div>
+  )
+}
+
+// Every version of the question, oldest first: the loop made visible.
+function Trail({ run, scope, setSel }) {
+  const versions = run.order.map(i => run.nodes[i])
+    .filter(n => n.scope === scope && n.status !== 'superseded' && (n.kind === 'frame' || n.kind === 'converge' || n.kind === 'ask') && n.status === 'done')
+  if (!versions.some(n => n.out.question)) return null
+  return (
+    <div className="trail">
+      <h3>How the question moved</h3>
+      <ol>
+        {versions.map((n, i) => n.kind === 'ask'
+          ? <li key={n.id} className="t-you"><button onClick={() => setSel(n.id)}><span>You</span>{n.out.skipped ? 'Let it decide' : n.out.answers.map(a => a.a).join(' \u00b7 ')}</button></li>
+          : n.out.question && <li key={n.id} className={i === versions.length - 1 ? 't-now' : ''}><button onClick={() => setSel(n.id)}>
+            <span>{n.kind === 'frame' ? (n.title === 'Reframe' ? 'Reframed with your answers' : 'First asked') : n.title === 'Restate with your answers' ? 'Restated with your answers' : 'Restated after the branches came back'}</span>{n.out.question}{n.out.changed && <em>{n.out.changed}</em>}
+          </button></li>)}
+      </ol>
     </div>
   )
 }
@@ -205,6 +223,23 @@ function Body({ run, n, act, setSel }) {
       <List title="New unknowns" items={o.unknowns} />
     </>
     case 'narrow': return <Narrow run={run} n={n} act={act} />
+    case 'converge': return <>
+      <p className="restated"><span className="sub">Question now</span>{o.question}</p>
+      {o.changed && <p className="sub">Changed: {o.changed}</p>}
+      <Narrow run={run} n={n} act={act} />
+      <h3>Gate</h3>
+      <p><span className={'tag' + (o.enough ? '' : ' dashed')}>{o.enough ? 'enough to commit' : 'not enough yet'}</span> Next: <b>{o.next}</b> &middot; confidence {o.confidence.level}</p>
+      <p className="sub">{o.stop_reason}</p>
+    </>
+    case 'develop': return <>
+      <p><span className={'tag v-' + o.verdict}>{o.verdict}</span>{o.summary}</p>
+      <h3>In practice</h3><p>{o.practice}</p>
+      <h3>Fit to the goal</h3><p>{o.fit}</p>
+      <List title="What it takes" items={o.takes} />
+      <List title="Risks" items={o.risks} />
+      {o.test && <><h3>Smallest test</h3><p>{o.test}</p></>}
+      <List title="Variants it grew" items={o.sub_options.map(x => <><b>{x.title}</b> - {x.detail}</>)} />
+    </>
     case 'assess': return <>
       <p>{o.summary}</p>
       <p><span className={'tag' + (o.enough ? '' : ' dashed')}>{o.enough ? 'enough to commit' : 'not enough yet'}</span> Confidence <b>{o.confidence.level}</b> - {o.confidence.basis}</p>

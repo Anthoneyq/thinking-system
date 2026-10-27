@@ -8,6 +8,7 @@ export async function fake(kind, prompt) {
   switch (kind) {
     case 'frame': return {
       title: 'Sample dry run', summary: 'Sample framing of the thought.',
+      question: answered ? 'Which direction fits what matters most to you?' : 'What should you do about this?',
       goal: { text: answered ? 'Pick a direction that fits what matters most' : 'Not stated yet', source: answered ? 'inferred' : 'unknown' },
       stated: ['(dry run) First line of what you wrote, compressed'],
       inferred: [{ text: 'You want a decision this week', why: 'Sample inference' }, { text: 'Budget is limited', why: 'Sample inference' }],
@@ -34,6 +35,26 @@ export async function fake(kind, prompt) {
       summary: 'Five options found, three kept.',
       all: ['A', 'B', 'C', 'D', 'E'].map((l, i) => ({ id: 'o' + (i + 1), title: 'Option ' + l, detail: 'Sample', from: ['possibilities'] })),
       top: [{ id: 'o1', why: 'Fastest' }, { id: 'o2', why: 'Cheapest' }, { id: 'o3', why: 'Best quality' }], combine: 'Start with A, keep the cheap part of B.',
+    }
+    case 'converge': {
+      const grow = prompt.includes('Growth rounds left: 1') || prompt.includes('Growth rounds left: 2')
+      const ask = !grow && prompt.includes('Asking is available')
+      return {
+        summary: grow ? 'Three strong directions; growing them further.' : ask ? 'Down to a choice only you can make.' : 'Enough to commit.',
+        question: grow ? 'Which of A, B or C gets you there fastest?' : 'A or B, given that speed matters most?',
+        changed: grow ? 'Narrowed from open to three directions' : 'Narrowed to two',
+        all: ['A', 'B', 'C', 'D', 'E'].map((l, i) => ({ id: 'o' + (i + 1), title: 'Option ' + l, detail: 'Sample', from: [i % 2 ? 'algorithm' : 'possibilities'] })),
+        top: [{ id: 'o1', why: 'Fastest' }, { id: 'o2', why: 'Cheapest' }, { id: 'o3', why: 'Best quality' }], combine: '',
+        enough: !grow && !ask, confidence: { level: 'medium', basis: 'Sample' },
+        next: grow ? 'develop' : ask ? 'ask' : 'commit',
+        questions: ask ? [{ id: 'q2', q: 'Option A or Option B?', why: 'Both fit; it is your call.', options: ['Option A', 'Option B'], blocking: true }] : [],
+        research: [], stop_reason: 'Sample.',
+      }
+    }
+    case 'develop': return {
+      summary: 'Sample developed direction.', practice: 'Sample practice.', fit: 'Fits well.', takes: ['Step one', 'Step two'],
+      risks: ['Sample risk'], test: 'Try it for a week.', verdict: 'possible',
+      sub_options: [{ title: 'Lean version', detail: 'Sample' }, { title: 'Bold version', detail: 'Sample' }],
     }
     case 'assess': return {
       summary: 'Enough to commit.', enough: true, confidence: { level: 'medium', basis: 'Sample' },

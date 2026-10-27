@@ -3,6 +3,7 @@ import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Po
 import { layout } from '../shared/layout.js'
 import { api, go, summary, KIND_LABEL } from './api.js'
 import Panel from './Panel.jsx'
+import MapView from './MapView.jsx'
 
 const STATUS = {
   queued: 'Up next', running: 'Working', done: 'Done', waiting: 'Waiting for you', error: 'Failed', superseded: 'Earlier pass',
@@ -34,6 +35,8 @@ export default function RunView({ id }) {
   const [scope, setScope] = useState('root')
   const [sel, setSel] = useState(null)
   const [showOld, setShowOld] = useState(false)
+  const [view, setView] = useState(() => { try { return localStorage.getItem('think.view') || 'map' } catch { return 'map' } })
+  const pickView = v => { setView(v); try { localStorage.setItem('think.view', v) } catch {} }
   const autoSel = useRef(new Set())
 
   useEffect(() => {
@@ -61,30 +64,35 @@ export default function RunView({ id }) {
   return (
     <div className="runview">
       <header className="run-top">
-        <a className="brand" href="/" onClick={e => { e.preventDefault(); go('/') }}><i />Thinking System</a>
+        <a className="brand" href="/" onClick={e => { e.preventDefault(); go('/') }} title="Thinking System"><i /></a>
         <div className="run-title">
           <h1>{run.title}</h1>
-          <span className="sub">{run.model} &middot; {run.effort} effort{run.cost > 0 ? ` · $${run.cost.toFixed(2)}` : ''}</span>
+          <span className="sub">{modelName(run.model)} &middot; {run.effort}{run.cost > 0 ? ` \u00b7 $${run.cost.toFixed(2)}` : ''}</span>
         </div>
-        <span className={'pill s-' + run.status}>{run.status === 'waiting' ? 'waiting for you' : run.status}</span>
         {run.status === 'paused' && <button className="primary" onClick={() => act('resume', {})}>Resume</button>}
-        <label className="check"><input type="checkbox" checked={showOld} onChange={e => setShowOld(e.target.checked)} /> Earlier passes</label>
-        <a className="btn" href={`/api/runs/${run.id}/excalidraw?scope=${scope}`}>Excalidraw</a>
-        <button className="btn" onClick={() => go('/')}>New thought</button>
+        <div className="seg" role="radiogroup" aria-label="View">
+          <button role="radio" aria-checked={view === 'map'} onClick={() => pickView('map')}>Map</button>
+          <button role="radio" aria-checked={view === 'steps'} onClick={() => pickView('steps')}>Steps</button>
+        </div>
+        {view === 'steps' && <label className="check"><input type="checkbox" checked={showOld} onChange={e => setShowOld(e.target.checked)} /> Earlier passes</label>}
+        <a className="ghost" href={`/api/runs/${run.id}/excalidraw?scope=${scope}`}>Export</a>
+        <button className="ghost" onClick={() => go('/')}>New</button>
       </header>
       <div className="run-body">
         <section className="canvas">
-          <nav className="levels">
+          {run.order.some(i => run.nodes[i].scope !== 'root') && <nav className="levels">
             {scopes.map((s, i) => (
               <button key={s.scope} aria-current={s.scope === scope} onClick={() => { setScope(s.scope); setSel(null) }}>
                 {i > 0 && <span className="sep">/</span>}Level {i + 1}{i > 0 ? `: ${s.label}` : ''}
               </button>
             ))}
-          </nav>
-          <ReactFlowProvider>
-            <Flow run={run} scope={scope} showOld={showOld} sel={sel} setSel={setSel} onOpenChild={n => { setScope(n.child); setSel(null) }} />
+          </nav>}
+          <ReactFlowProvider key={view + scope}>
+            {view === 'map'
+              ? <MapView run={run} scope={scope} sel={sel} setSel={setSel} />
+              : <Flow run={run} scope={scope} showOld={showOld} sel={sel} setSel={setSel} onOpenChild={n => { setScope(n.child); setSel(null) }} />}
           </ReactFlowProvider>
-          <Activity run={run} />
+          <Caption run={run} scope={scope} />
         </section>
         <Panel run={run} node={node} scope={scope} act={act} setSel={setSel} setScope={setScope} />
       </div>
@@ -140,17 +148,51 @@ function Flow({ run, scope, showOld, sel, setSel, onOpenChild }) {
         nodesConnectable={false} minZoom={0.25} maxZoom={1.6} proOptions={{ hideAttribution: true }}>
         <Background gap={24} size={1.2} />
         <Controls showInteractive={false} />
-        {visible.length > 7 && <MiniMap pannable zoomable nodeBorderRadius={6} nodeClassName={n => n.data.n.stuck ? 'mm-stuck' : n.data.n.status === 'waiting' || n.data.n.status === 'running' ? 'mm-live' : 'mm-node'} maskColor="rgba(120,125,140,.14)" position="top-right" style={{ width: 180, height: 110 }} />}
+        {visible.length > 7 && <MiniMap pannable zoomable nodeBorderRadius={6} nodeClassName={n => n.data.n?.stuck ? 'mm-stuck' : ['waiting', 'running'].includes(n.data.n?.status) ? 'mm-live' : 'mm-node'} maskColor="rgba(120,125,140,.14)" position="bottom-left" style={{ width: 180, height: 110 }} />}
       </ReactFlow>
     </div>
   )
 }
 
-function Activity({ run }) {
-  const last = run.activity.slice(-3).reverse()
+const modelName = id => ({ 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-opus-5-5': 'Opus 5.5', 'claude-fable-5-1': 'Fable 5.1', 'claude-haiku-5-5': 'Haiku 5.5', codex: 'GPT (Codex)', dry: 'Dry run' })[id] || id
+
+// The live narration: what the system is doing right now, in plain words.
+function phase(run, scope) {
+  const ns = run.order.map(i => run.nodes[i]).filter(n => n.scope === scope && n.status !== 'superseded')
+  const running = ns.filter(n => n.status === 'running')
+  const has = k => running.filter(n => n.kind === k)
+  const names = xs => xs.map(n => n.title).join(' \u00b7 ')
+  const many = (k, word) => { const c = k === 1 ? '1 ' + word.replace(/s$/, '') : `${k} ${word}`; return c }
+  // Count the whole batch the running step belongs to, not just what is mid-call.
+  const batch = n => ns.filter(x => x.kind === n.kind && x.deps.join() === n.deps.join())
+  const waiting = ns.find(n => n.status === 'waiting')
+  if (run.status === 'paused') return ['Paused', 'Press Resume to carry on.']
+  if (waiting) return ['Back to you', `${waiting.data.questions.length} question${waiting.data.questions.length === 1 ? '' : 's'}. Answer, or let it decide.`]
+  if (has('frame').length) return ns.filter(n => n.kind === 'frame').length > 1 ? ['Restating with your answers', 'Folding what you said back into the question.'] : ['Reading your thought', 'What you said, what it infers, what is missing.']
+  if (has('route').length) return ['Choosing directions', 'Picking the thinking methods that fit this.']
+  if (has('develop').length) return [`Growing ${many(batch(has('develop')[0]).length, 'directions')} further`, names(batch(has('develop')[0]))]
+  if (has('research').length) return ['Looking things up', names(has('research'))]
+  if (has('method').length) return [`Branching out in ${many(batch(has('method')[0]).length, 'directions')}`, names(batch(has('method')[0]))]
+  if (has('converge').length) return ['Coming back together', 'Merging every branch and restating the question.']
+  if (has('review').length) return ['Arguing against it', 'One skeptic pass before committing.']
+  if (has('decide').length) return ['Writing the decision', 'Recommendation, reasons, next action.']
+  if (has('unstick').length) return ['Explaining plainly', names(has('unstick'))]
+  if (ns.some(n => n.kind === 'decide' && n.status === 'done')) {
+    const passes = ns.filter(n => n.kind === 'converge' && n.status === 'done').length
+    const branches = ns.filter(n => ['method', 'develop', 'research'].includes(n.kind)).length
+    return ['Decided', `${passes} pass${passes === 1 ? '' : 'es'} \u00b7 ${branches} branches \u00b7 question restated ${Math.max(0, passes)}\u00d7`]
+  }
+  if (ns.some(n => n.status === 'error')) return ['A step failed', 'Open it and press Try again.']
+  return ['', '']
+}
+
+function Caption({ run, scope }) {
+  const [head, sub] = phase(run, scope)
+  const live = run.status === 'running'
   return (
-    <div className="activity" aria-live="polite">
-      {last.map((a, i) => <div key={a.t + i} className={i ? 'old' : ''}><time>{new Date(a.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</time>{a.text}</div>)}
+    <div className="caption" aria-live="polite">
+      <div key={head} className="cap-head">{live && <span className="pulse" />}{head}</div>
+      {sub && <div className="cap-sub">{sub}</div>}
     </div>
   )
 }
