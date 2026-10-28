@@ -179,15 +179,20 @@ function NodeDetail({ run, n, act, setSel, setScope }) {
 
 function AskForm({ n, act }) {
   const [vals, setVals] = useState({})
-  const qs = n.data.questions
-  const send = skip => act('answer', { nodeId: n.id, skip, answers: qs.map(q => ({ q: q.q, a: vals[q.id] || '' })) })
+  const unclear = n.data.unclear
+  const qs = unclear ? n.data.questions.filter(q => unclear.questions.includes(q.q)) : n.data.questions
+  const send = (skip, asIs = false) => act('answer', { nodeId: n.id, skip, asIs, answers: qs.map(q => ({ q: q.q, a: vals[q.id] || '' })) })
+  const first = q => unclear?.first.find(a => a.q === q.q || a.q.includes(q.q))?.a
   return (
     <form className="ask" onSubmit={e => { e.preventDefault(); send(false) }}>
-      <p className="sub">Only questions whose answer changes the result. Skip any you don't care about.</p>
+      {unclear
+        ? <p className="jev-note"><b>Jev couldn't use part of your answer.</b> Add a line below, keep what you said, or let it decide.</p>
+        : <p className="sub">Only questions whose answer changes the result. Skip any you don't care about.</p>}
       {qs.map(q => (
         <fieldset key={q.id}>
           <legend>{q.q}{q.blocking && <span className="tag">matters most</span>}</legend>
           <p className="sub">{q.why}</p>
+          {first(q) && <p className="said">You said: {first(q)}</p>}
           {q.options.length > 0 && <div className="opts">{q.options.map(op => (
             <button type="button" key={op} aria-pressed={vals[q.id] === op} onClick={() => setVals(v => ({ ...v, [q.id]: v[q.id] === op ? '' : op }))}>{op}</button>
           ))}</div>}
@@ -195,7 +200,8 @@ function AskForm({ n, act }) {
         </fieldset>
       ))}
       <div className="row">
-        <button className="primary">Continue</button>
+        <button className="primary">{unclear ? 'Add this' : 'Continue'}</button>
+        {unclear && <button type="button" className="btn" onClick={() => send(false, true)}>Keep what I said</button>}
         <button type="button" className="btn" onClick={() => send(true)}>You decide</button>
       </div>
     </form>
@@ -210,6 +216,7 @@ function Body({ run, n, act, setSel }) {
     case 'ask': return o.skipped ? <p>You let the system decide.</p> : <ul className="plain">{o.answers.map((a, i) => <li key={i}><b>{a.q}</b><br />{a.a}</li>)}</ul>
     case 'route': return <>
       <p>{o.summary}</p>
+      {n.data.jev?.scored && <JevScores j={n.data.jev} picked={o.plan.map(p => p.method)} />}
       {o.plan.length === 0 && <p className="sub">No extra methods needed.</p>}
       <ul className="plain">{o.plan.map((p, i) => <li key={i}><b>{p.method}</b>: {p.focus}<div className="sub">{p.why}</div></li>)}</ul>
     </>
@@ -229,6 +236,7 @@ function Body({ run, n, act, setSel }) {
       <Narrow run={run} n={n} act={act} />
       <h3>Gate</h3>
       <p><span className={'tag' + (o.enough ? '' : ' dashed')}>{o.enough ? 'enough to commit' : 'not enough yet'}</span> Next: <b>{o.next}</b> &middot; confidence {o.confidence.level}</p>
+      {n.data.jev?.kind === 'gate' && <JevGate j={n.data.jev} />}
       <p className="sub">{o.stop_reason}</p>
     </>
     case 'develop': return <>
@@ -274,6 +282,7 @@ function Body({ run, n, act, setSel }) {
 function Narrow({ run, n, act }) {
   const o = n.out
   const top = Object.fromEntries(o.top.map(t => [t.id, t.why]))
+  const jev = Object.fromEntries((n.data.jev?.options || []).map(x => [x.id, x]))
   const [picks, setPicks] = useState(n.data.userPicks || [])
   const [combine, setCombine] = useState('')
   const toggle = id => setPicks(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
@@ -285,7 +294,8 @@ function Narrow({ run, n, act }) {
         <li key={x.id} className={top[x.id] ? 'top' : ''}>
           <label>
             <input type="checkbox" checked={picks.includes(x.id)} onChange={() => toggle(x.id)} />
-            <span><b>{x.title}</b> {top[x.id] && <span className="tag">top 3</span>}<br />{x.detail}{top[x.id] && <span className="sub why">Why: {top[x.id]}</span>}</span>
+            <span><b>{x.title}</b> {top[x.id] && <span className="tag">top 3</span>}{jev[x.id]?.breaks >= 0.7 && <span className="tag red">breaks a hard rule</span>}<br />{x.detail}{top[x.id] && <span className="sub why">Why: {top[x.id]}</span>}
+              {jev[x.id] && <Meter p={jev[x.id].fit} label="fit" />}</span>
           </label>
         </li>
       ))}
@@ -297,4 +307,31 @@ function Narrow({ run, n, act }) {
     </div>}
     {run.picks[n.scope] && <p className="sub">Your pick in effect: {run.picks[n.scope]}</p>}
   </>
+}
+
+function Meter({ p, label }) {
+  return <span className="meter" title={`${label} ${Math.round(p * 100)}%`}><span className="track"><i style={{ width: `${Math.round(p * 100)}%` }} /></span><em>{label ? label + ' ' : ''}{Math.round(p * 100)}%</em></span>
+}
+
+function JevScores({ j, picked }) {
+  return <div className="jev-box">
+    <span className="eyebrow">Jev weighed all the methods in {(j.ms / 1000).toFixed(1)}s</span>
+    {j.fallback && <p className="sub">{j.fallback}.</p>}
+    <ul className="plain">{j.scored.map(s => <li key={s.id} className={picked.includes(s.id) ? '' : 'dim'}><span><b>{s.id}</b>{s.lead >= 0.1 && <span className="tag">lead {Math.round(s.lead * 100)}%</span>}</span> <Meter p={s.p} label="helps" /></li>)}</ul>
+  </div>
+}
+
+const NEXT_LABEL = { commit: 'Decide now', develop: 'Grow the top options', research: 'Look things up', more: 'Try other angles', ask: 'Ask you' }
+
+function JevGate({ j }) {
+  const ps = Object.entries(j.probabilities || {}).sort((a, b) => b[1] - a[1])
+  return <div className="jev-box">
+    <span className="eyebrow">Jev's call &middot; {(j.ms / 1000).toFixed(1)}s</span>
+    {j.next
+      ? <p>{j.decidedBy === 'jev' ? <><b>{NEXT_LABEL[j.next]}</b>, {Math.round(j.confidence * 100)}% sure.</> : <>Too unsure ({Math.round(j.confidence * 100)}%), so Claude's call stood: <b>{NEXT_LABEL[j.claude.next]}</b>.</>}
+        {j.decidedBy === 'jev' && j.claude.next !== j.next && <span className="sub"> Claude had said: {NEXT_LABEL[j.claude.next]}.</span>}</p>
+      : <p className="sub">Only one way forward was open, so Jev just scored the options.</p>}
+    {ps.length > 1 && <ul className="plain">{ps.map(([k, p]) => <li key={k}>{NEXT_LABEL[k]} <Meter p={p} label="" /></li>)}</ul>}
+    {j.dropped?.length > 0 && <p className="sub">Dropped from the shortlist for breaking a hard rule: {j.dropped.length}.</p>}
+  </div>
 }

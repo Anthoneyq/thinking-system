@@ -3,9 +3,10 @@
 //   --model <id>          claude-sonnet-5-5 (default), claude-opus-5-5, claude-haiku-5-5, codex, dry
 //   --effort <level>      quick | normal (default) | deep
 //   --hands-off           never stop to ask; decide everything itself
+//   --no-jev              let Claude make every routing call (Jev is used when TYPESAFE_API_KEY is set)
 //   --wait                follow the run; return when it asks you something (exit 3) or finishes with the record (exit 0)
 //   --no-open             don't open the browser
-// think answer <run-id> "your answer"   answer the questions it is waiting on (or --skip to let it decide)
+// think answer <run-id> "your answer"   answer the questions it is waiting on (--skip to let it decide, --as-is to keep a reply Jev queried)
 // think watch <run-id>                  keep following a run after a question
 // Starts the local app if needed (http://localhost:4477), starts a run, and opens the live map.
 import { readFileSync, existsSync, openSync, mkdirSync, realpathSync } from 'node:fs'
@@ -21,19 +22,28 @@ const args = process.argv.slice(2)
 const flag = name => { const i = args.indexOf(name); return i >= 0 ? args.splice(i, 2)[1] : undefined }
 const bool = name => { const i = args.indexOf(name); return i >= 0 ? !!args.splice(i, 1) : false }
 const model = flag('--model'), effort = flag('--effort')
+const noJev = bool('--no-jev')
 const handsOff = bool('--hands-off'), wait = bool('--wait'), noOpen = bool('--no-open') || !!process.env.THINK_NO_OPEN
 
 // Answer from the chat instead of the browser.
 if (args[0] === 'answer') {
   const [, id, ...rest] = args
-  const skip = rest.includes('--skip'), text = rest.filter(x => x !== '--skip').join(' ').trim()
+  const skip = rest.includes('--skip'), asIs = rest.includes('--as-is'), text = rest.filter(x => !x.startsWith('--')).join(' ').trim()
   const r = await fetch(`${BASE}/api/runs/${id}`).then(x => x.json()).catch(() => null)
   const ask = r?.order?.map(i => r.nodes[i]).find(n => n.status === 'waiting')
   if (!ask) { console.error('That run is not waiting for an answer.'); process.exit(1) }
   const res = await fetch(`${BASE}/api/runs/${id}/answer`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ nodeId: ask.id, skip: skip || !text, answers: [{ q: ask.data.questions.map(q => q.q).join(' / '), a: text }] }) })
-  console.log(res.ok ? 'Answered. The run carries on.' : (await res.json()).error)
-  process.exit(res.ok ? 0 : 1)
+    body: JSON.stringify({ nodeId: ask.id, skip: skip || (!text && !asIs), asIs, answers: text ? [{ q: ask.data.questions.map(q => q.q).join(' / '), a: text }] : [] }) })
+  const out = await res.json()
+  if (!res.ok) { console.error(out.error); process.exit(1) }
+  if (out.unclear) {
+    console.log('NEEDS A LITTLE MORE. Jev could not use the reply for:')
+    for (const q of out.unclear) console.log(`  - ${q}`)
+    console.log(`Answer again with: think answer ${id} "..."  (or --as-is to keep the reply, --skip to let it decide)`)
+    process.exit(3)
+  }
+  console.log('Answered. The run carries on.')
+  process.exit(0)
 }
 
 const parts = args.map(a => existsSync(a) ? `--- ${basename(a)} ---\n${readFileSync(a, 'utf8')}` : a)
@@ -66,7 +76,7 @@ if (args[0] === 'watch') {
 
 let url = BASE, run = null
 if (input) {
-  const res = await fetch(BASE + '/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ input, model, effort, handsOff }) })
+  const res = await fetch(BASE + '/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ input, model, effort, handsOff, ...(noJev ? { jev: false } : {}) }) })
   run = await res.json()
   if (!res.ok) { console.error(run.error); process.exit(1) }
   url = `${BASE}/run/${run.id}`
@@ -91,6 +101,9 @@ async function watch(id, url, ignore) {
     for (const n of nodes.filter(n => n.scope === 'root')) {
       if (n.status === 'running') say(`... ${n.title}`)
       if (n.status === 'done' && (n.kind === 'frame' || n.kind === 'converge') && n.out.question) say(`Question now: ${n.out.question}`)
+      const j = n.status === 'done' && n.data.jev
+      if (j?.kind === 'route' && !j.fallback) say(`Jev: ${n.out.summary}`)
+      if (j?.kind === 'gate' && j.next) say(`Jev: next is ${j.next} (${Math.round(j.confidence * 100)}% sure${j.decidedBy === 'claude' ? ', too unsure, so Claude decided' : ''})`)
       if (n.status === 'error') say(`A step failed (${n.title}): ${n.error}. Open the map and press Try again.`)
     }
     const ask = nodes.find(n => n.status === 'waiting' && !ignore.has(n.id))

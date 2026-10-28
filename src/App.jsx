@@ -25,6 +25,7 @@ function Home() {
   const [input, setInput] = useState('')
   const [model, setModel] = useState(() => { try { return localStorage.getItem('think.model') || 'claude-sonnet-5-5' } catch { return 'claude-sonnet-5-5' } })
   const [effort, setEffort] = useState('normal')
+  const [jev, setJev] = useState(() => { try { return localStorage.getItem('think.jev') !== 'off' } catch { return true } })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [drag, setDrag] = useState(false)
@@ -35,7 +36,8 @@ function Home() {
     if (!input.trim() || busy) return
     setBusy(true); setErr('')
     try { localStorage.setItem('think.model', model) } catch {}
-    try { const { id } = await api('runs', { input, model, effort }); go('/run/' + id) } catch (e) { setErr(e.message); setBusy(false) }
+    try { localStorage.setItem('think.jev', jev ? 'on' : 'off') } catch {}
+    try { const { id } = await api('runs', { input, model, effort, ...(meta?.jev ? { jev } : {}) }); go('/run/' + id) } catch (e) { setErr(e.message); setBusy(false) }
   }
 
   async function drop(e) {
@@ -70,6 +72,13 @@ function Home() {
               {EFFORTS.map(x => <button key={x.id} role="radio" aria-checked={effort === x.id} title={x.note} onClick={() => setEffort(x.id)}>{x.label}</button>)}
             </div>
           </div>
+          {meta?.jev && <div className="field">
+            <span>Decisions</span>
+            <div className="seg" role="radiogroup">
+              <button role="radio" aria-checked={jev} title="Jev makes the routing calls in under a second; Claude steps in when Jev is unsure" onClick={() => setJev(true)}>Jev</button>
+              <button role="radio" aria-checked={!jev} title="Claude makes every call" onClick={() => setJev(false)}>Claude</button>
+            </div>
+          </div>}
           <button className="primary go" disabled={!input.trim() || busy} onClick={start}>{busy ? 'Starting...' : 'Think it through'} <kbd>⌘↵</kbd></button>
         </div>
         {err && <p className="error-line">{err}</p>}

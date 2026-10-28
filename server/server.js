@@ -4,6 +4,7 @@ import { join, extname, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as engine from './engine.js'
 import { MODELS } from './models.js'
+import { JEV_AVAILABLE } from './jev.js'
 import { METHODS } from './methods.js'
 import { toExcalidraw } from './excalidraw.js'
 import { layout } from '../shared/layout.js'
@@ -43,7 +44,7 @@ createServer(async (req, res) => {
       const [, what, id, action] = parts
       if (what === 'health') return json(res, 200, { ok: true, app: 'thinking-system', version: VERSION, runsDir: RUNS_DIR })
       if (what === 'shutdown' && req.method === 'POST') { json(res, 200, { ok: true }); return setTimeout(() => process.exit(0), 50) }
-      if (what === 'meta') return json(res, 200, { models: MODELS, methods: METHODS.map(({ id, name, when }) => ({ id, name, when })) })
+      if (what === 'meta') return json(res, 200, { models: MODELS, jev: JEV_AVAILABLE, methods: METHODS.map(({ id, name, when }) => ({ id, name, when })) })
       if (what === 'runs' && !id && req.method === 'GET') return json(res, 200, engine.listRuns())
       if (what === 'runs' && !id && req.method === 'POST') {
         const b = await body(req)
@@ -63,8 +64,8 @@ createServer(async (req, res) => {
         return res.end(file)
       }
       if (ACTIONS[action] && req.method === 'POST') {
-        ACTIONS[action](run, await body(req))
-        return json(res, 200, { ok: true })
+        const r = await ACTIONS[action](run, await body(req))
+        return json(res, 200, { ok: true, ...(r?.unclear ? { unclear: r.unclear } : {}) })
       }
       return json(res, 404, { error: 'Unknown endpoint' })
     }

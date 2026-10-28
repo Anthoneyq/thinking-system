@@ -151,7 +151,7 @@ For each pick give a focus (the exact question it should answer here) and why. F
       return head + `STEP: Apply the method "${node.data.name}".
 How: ${node.data.how}
 Focus: ${node.data.focus}
-${node.data.checks?.length ? 'Checks: ' + node.data.checks.join('; ') : ''}
+${node.data.checks?.length ? 'Checks: ' + node.data.checks.join('; ') : node.data.method === 'domain-lens' ? 'Choose the 3-6 standard checks for this subject yourself.' : ''}
 Report findings (mark each evidence / inference / assumption), options this method surfaces, anything that should be cut and why, risks, and new unknowns. Keep it tight.`
     case 'converge':
       return head + `STEP: Come back together (pass ${opts.pass}). The branches so far have reported.
@@ -164,7 +164,9 @@ Report findings (mark each evidence / inference / assumption), options this meth
    ask = the choice now depends on the user's preferences or facts only they know. Ask them, offering the top options as answer choices where natural.
 Growth rounds left: ${opts.loopsLeft}. If 0, do not choose develop, research or more.${opts.loopsLeft > 0 && opts.pass === 1 ? ' This is the first pass: prefer develop unless the answer is already obvious.' : ''}
 ${opts.askAllowed ? 'Asking is available.' : 'Asking is not available; do not choose ask.'}
-If enough, next = commit. Fill questions only for ask and research only for research.
+If enough, next = commit. ${opts.jev
+  ? 'Whatever you choose, fill questions with up to 3 you would ask the user (only ones whose answer changes the recommendation; offer the top options as answer choices where natural) and research with up to 3 queries that could be looked up; a separate gate may use either. Empty lists are fine when none apply.'
+  : 'Fill questions only for ask and research only for research.'}
 stop_reason: one sentence on why you stop or continue.
 ${opts.picks ? 'The user picked these and their choice wins: ' + opts.picks : ''}`
     case 'develop':

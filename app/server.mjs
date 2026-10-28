@@ -53,18 +53,18 @@ async function fake(kind, prompt) {
       };
     case "converge": {
       const grow = prompt.includes("Growth rounds left: 1") || prompt.includes("Growth rounds left: 2");
-      const ask = !grow && prompt.includes("Asking is available");
+      const ask2 = !grow && prompt.includes("Asking is available");
       return {
-        summary: grow ? "Three strong directions; growing them further." : ask ? "Down to a choice only you can make." : "Enough to commit.",
+        summary: grow ? "Three strong directions; growing them further." : ask2 ? "Down to a choice only you can make." : "Enough to commit.",
         question: grow ? "Which of A, B or C gets you there fastest?" : "A or B, given that speed matters most?",
         changed: grow ? "Narrowed from open to three directions" : "Narrowed to two",
         all: ["A", "B", "C", "D", "E"].map((l, i) => ({ id: "o" + (i + 1), title: "Option " + l, detail: "Sample", from: [i % 2 ? "algorithm" : "possibilities"] })),
         top: [{ id: "o1", why: "Fastest" }, { id: "o2", why: "Cheapest" }, { id: "o3", why: "Best quality" }],
         combine: "",
-        enough: !grow && !ask,
+        enough: !grow && !ask2,
         confidence: { level: "medium", basis: "Sample" },
-        next: grow ? "develop" : ask ? "ask" : "commit",
-        questions: ask ? [{ id: "q2", q: "Option A or Option B?", why: "Both fit; it is your call.", options: ["Option A", "Option B"], blocking: true }] : [],
+        next: grow ? "develop" : ask2 ? "ask" : "commit",
+        questions: ask2 ? [{ id: "q2", q: "Option A or Option B?", why: "Both fit; it is your call.", options: ["Option A", "Option B"], blocking: true }] : [],
         research: [],
         stop_reason: "Sample."
       };
@@ -465,7 +465,7 @@ For each pick give a focus (the exact question it should answer here) and why. F
       return head + `STEP: Apply the method "${node.data.name}".
 How: ${node.data.how}
 Focus: ${node.data.focus}
-${node.data.checks?.length ? "Checks: " + node.data.checks.join("; ") : ""}
+${node.data.checks?.length ? "Checks: " + node.data.checks.join("; ") : node.data.method === "domain-lens" ? "Choose the 3-6 standard checks for this subject yourself." : ""}
 Report findings (mark each evidence / inference / assumption), options this method surfaces, anything that should be cut and why, risks, and new unknowns. Keep it tight.`;
     case "converge":
       return head + `STEP: Come back together (pass ${opts.pass}). The branches so far have reported.
@@ -478,7 +478,7 @@ Report findings (mark each evidence / inference / assumption), options this meth
    ask = the choice now depends on the user's preferences or facts only they know. Ask them, offering the top options as answer choices where natural.
 Growth rounds left: ${opts.loopsLeft}. If 0, do not choose develop, research or more.${opts.loopsLeft > 0 && opts.pass === 1 ? " This is the first pass: prefer develop unless the answer is already obvious." : ""}
 ${opts.askAllowed ? "Asking is available." : "Asking is not available; do not choose ask."}
-If enough, next = commit. Fill questions only for ask and research only for research.
+If enough, next = commit. ${opts.jev ? "Whatever you choose, fill questions with up to 3 you would ask the user (only ones whose answer changes the recommendation; offer the top options as answer choices where natural) and research with up to 3 queries that could be looked up; a separate gate may use either. Empty lists are fine when none apply." : "Fill questions only for ask and research only for research."}
 stop_reason: one sentence on why you stop or continue.
 ${opts.picks ? "The user picked these and their choice wins: " + opts.picks : ""}`;
     case "develop":
@@ -611,6 +611,120 @@ function recordMarkdown(run2) {
     ""
   );
   return lines.join("\n");
+}
+const KEY = process.env.TYPESAFE_API_KEY || config.typesafeKey;
+const JEV_AVAILABLE = !!KEY;
+const PRICE = 0.042 / 1e6;
+async function ask(state, questions) {
+  const t = Date.now();
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch("https://api.typesafe.ai/v1/systemone", {
+      method: "POST",
+      headers: { authorization: `Bearer ${KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: "jev-latest", state, questions }),
+      signal: AbortSignal.timeout(3e4)
+    });
+    if ((res.status === 429 || res.status === 529) && attempt < 3) {
+      await new Promise((r2) => setTimeout(r2, 500 * 2 ** attempt));
+      continue;
+    }
+    if (!res.ok) throw new Error(`Jev ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const r = await res.json();
+    return { a: r.answers, ms: Date.now() - t, cost: r.usage.input_tokens * PRICE, model: r.model };
+  }
+}
+const meta = (r) => ({ ms: r.ms, model: r.model });
+const shortThought = (text) => text.length > 4e3 ? text.slice(0, 4e3) + "..." : text;
+function situation(run2, frame, question2, extra = {}) {
+  const f = frame?.out;
+  return {
+    thought: shortThought(run2.input),
+    goal: f ? `${f.goal.text} (${f.goal.source})` : "unknown",
+    question: question2,
+    hard_constraints: f ? f.constraints.filter((c) => c.hard).map((c) => c.text) : [],
+    other_constraints: [...f ? f.constraints.filter((c) => !c.hard).map((c) => c.text) : [], ...run2.constraints.map((c) => c.text)],
+    unknowns: f ? f.unknowns.map((u) => u.text) : [],
+    ...extra
+  };
+}
+async function pickMethods(state, { max, exclude = [] }) {
+  const pool = METHODS.filter((m) => !exclude.includes(m.id));
+  const questions = {
+    simple: { type: "noul", instructions: "Is `question` simple enough that one quick line of thinking settles it?" },
+    // The yes/no answers alone run high for most methods; one choice across all of them sets the lead.
+    lead: { type: "choice", instructions: "Which thinking method would most help answer `question` toward `goal`?", criteria: Object.fromEntries(pool.map((m) => [m.id, `${m.name}: ${m.when}`])) }
+  };
+  for (const m of pool) questions["m_" + m.id] = {
+    type: "noul",
+    instructions: `Would the thinking method "${m.name}" materially help answer \`question\`, given \`goal\` and the situation? The method: ${m.how} It fits when: ${m.when}`,
+    criteria: { true: "Applying it here would surface options, risks or facts that could change the answer", false: "It would add little here or does not fit this situation" }
+  };
+  const r = await ask(state, questions);
+  const lead = r.a.lead.probabilities;
+  const scored = pool.map((m) => ({ id: m.id, p: r.a["m_" + m.id].noul, lead: lead[m.id] || 0 })).sort((a, b) => 2 * b.lead + b.p - (2 * a.lead + a.p));
+  const simple = r.a.simple.noul >= 0.7;
+  const picks = scored.filter((s) => s.p >= 0.5 || s.lead >= 0.1).slice(0, simple ? 1 : max);
+  return { ...meta(r), cost: r.cost, simple, scored, picks: picks.length ? picks : null };
+}
+async function weighQuestions(state, qs) {
+  if (!qs.length) return null;
+  const questions = {};
+  qs.forEach((q, i) => {
+    questions["changes_" + i] = { type: "noul", instructions: `Would the user's answer to \`candidate_questions[${i}]\` change the recommendation, the scope or the next action?` };
+    questions["blocks_" + i] = { type: "noul", instructions: `Is a good answer impossible without the user answering \`candidate_questions[${i}]\`, rather than a sensible default the system could choose and state?` };
+  });
+  const r = await ask({ ...state, candidate_questions: qs.map((q) => `${q.q} (why: ${q.why})`) }, questions);
+  return { ...meta(r), cost: r.cost, each: qs.map((q, i) => ({ changes: r.a["changes_" + i].noul, blocks: r.a["blocks_" + i].noul })) };
+}
+const NEXT = {
+  commit: "Enough is known: more work is unlikely to change which option to recommend or the next action",
+  develop: "The shortlisted options are promising but too vague to choose between; working out what each takes, its risks and a test would settle it",
+  research: "The choice hinges on facts that can be looked up, listed in `possible_research`",
+  more: "The options so far miss important angles; different kinds of thinking are needed before choosing",
+  ask: "The choice now depends on the user's preferences or facts only they know, listed in `possible_questions`"
+};
+const FIT = [
+  "Works against the goal or ignores it",
+  "Helps the goal a little",
+  "Serves the goal with real trade-offs",
+  "Serves the goal well within the constraints",
+  "Clearly the strongest fit for the goal and constraints"
+];
+async function gate(state, out, allowed) {
+  const questions = {};
+  if (allowed.length > 1) questions.next = { type: "choice", instructions: "The branches have reported and the options are in `options`. What should the thinking system do next?", criteria: Object.fromEntries(allowed.map((k) => [k, NEXT[k]])) };
+  out.all.forEach((o, i) => {
+    questions["fit_" + i] = { type: "score", instructions: `How well does \`options[${i}]\` serve \`goal\` and answer \`question\`?`, criteria: FIT };
+    if (state.hard_constraints.length) questions["breaks_" + i] = { type: "noul", instructions: `Does \`options[${i}]\` break any rule in \`hard_constraints\`?` };
+  });
+  const r = await ask({
+    ...state,
+    options: out.all.map((o) => `${o.title}: ${o.detail}`),
+    possible_questions: out.questions.map((q) => q.q),
+    possible_research: out.research.map((x) => x.query)
+  }, questions);
+  const n = r.a.next;
+  return {
+    ...meta(r),
+    cost: r.cost,
+    next: n?.choice ?? null,
+    confidence: n?.confidence ?? 0,
+    probabilities: n?.probabilities ?? {},
+    options: out.all.map((o, i) => ({ id: o.id, fit: r.a["fit_" + i].score / (FIT.length - 1), fitConfidence: r.a["fit_" + i].confidence, breaks: r.a["breaks_" + i]?.noul ?? 0 }))
+  };
+}
+async function checkAnswers(pairs) {
+  const state = { questions: pairs.map((p) => p.q), replies: pairs.map((p) => p.a) };
+  const qs = {};
+  pairs.forEach((p, i) => {
+    qs["ok_" + i] = {
+      type: "noul",
+      instructions: `Does \`replies[${i}]\` give usable information for \`questions[${i}]\`?`,
+      criteria: { true: "It answers it, states a preference or fact that bears on it, or says to decide or skip it", false: "It is about something else, contradicts itself, or is too vague to act on" }
+    };
+  });
+  const r = await ask(state, qs);
+  return { ...meta(r), cost: r.cost, each: pairs.map((p, i) => r.a["ok_" + i].noul) };
 }
 const bus = new EventEmitter();
 bus.setMaxListeners(100);
@@ -784,21 +898,25 @@ async function start(run2, node) {
     researchAllowed: E.loops - loopsUsed(run2, scope) > 0,
     web: model.web,
     picks: run2.picks[scope],
-    pass: passOf(run2, scope)
+    pass: passOf(run2, scope),
+    jev: run2.jev
   };
   try {
-    const prompt = stepPrompt(node.kind, node, context(run2, scope), opts);
-    const { out, cost } = await callModel({
+    let res = node.kind === "route" && run2.jev ? await jevRoute(run2, node, E) : null;
+    if (!res) res = await callModel({
       model: run2.model,
       system: SYSTEM,
-      prompt,
+      prompt: stepPrompt(node.kind, node, context(run2, scope), opts),
       schema: SCHEMAS[node.kind],
       kind: node.kind,
       web: node.kind === "research" && model.web
     });
-    run2.cost += cost;
+    run2.cost += res.cost;
     if (node.status !== "running") return;
-    node.out = out;
+    node.out = res.out;
+    if (run2.jev) await jevJudge(run2, node, opts);
+    if (node.status !== "running") return;
+    const out = node.out;
     node.status = "done";
     node.endedAt = (/* @__PURE__ */ new Date()).toISOString();
     log(run2, `${node.title}: ${out.summary || "done"}`);
@@ -810,6 +928,89 @@ async function start(run2, node) {
     log(run2, `${node.title}: failed`);
   }
   tick(run2);
+}
+function track(run2, r) {
+  run2.cost += r.cost;
+  run2.jevStats = { calls: (run2.jevStats?.calls || 0) + 1, ms: (run2.jevStats?.ms || 0) + r.ms };
+}
+const jevError = (node, e) => {
+  node.data.jev = { ...node.data.jev, error: String(e.message || e).slice(0, 200) };
+};
+const pct = (p) => Math.round(p * 100) + "%";
+async function jevRoute(run2, node, E) {
+  const s = node.scope;
+  const frame = latest(run2, s, "frame");
+  const q = questionTrail(run2, s).at(-1)?.text || run2.input.slice(0, 300);
+  const review = latest(run2, s, "review");
+  const objections = node.title === "Answer the objections" && review ? review.out.objections.map((o) => o.text) : null;
+  const done = inScope(run2, s).filter((n) => n.kind === "method").map((n) => n.data.method);
+  try {
+    const r = await pickMethods(situation(run2, frame, q, objections ? { objections } : {}), { max: E.methods, exclude: node.data.followup ? done : [] });
+    track(run2, r);
+    node.data.jev = { kind: "route", ms: r.ms, simple: r.simple, scored: r.scored.slice(0, 8) };
+    if (!r.picks) {
+      node.data.jev.fallback = "No method was a clear fit, so Claude chose";
+      return null;
+    }
+    const focus = !node.data.followup ? q : objections ? "How to answer the skeptic's objections" : `What has not been considered yet about: ${q}`;
+    const n = r.picks.length;
+    return { cost: 0, out: {
+      summary: `Jev picked ${n} method${n > 1 ? "s" : ""} in ${(r.ms / 1e3).toFixed(1)}s.`,
+      simple: r.simple,
+      plan: r.picks.map((p) => ({ method: p.id, focus, why: `Jev: ${pct(p.p)} likely to help`, checks: [] }))
+    } };
+  } catch (e) {
+    jevError(node, e);
+    return null;
+  }
+}
+function weigh(qs, r) {
+  return qs.map((q, i) => ({ ...q, jev: r.each[i], blocking: r.each[i].blocks >= 0.6 ? true : r.each[i].blocks <= 0.4 ? false : q.blocking }));
+}
+const keepQuestions = (qs) => qs.filter((q) => !q.jev || q.jev.changes >= 0.35);
+async function jevJudge(run2, node, opts) {
+  const o = node.out, s = node.scope;
+  try {
+    if (node.kind === "frame" && opts.askAllowed && o.questions.length) {
+      const r = await weighQuestions(situation(run2, node, o.question), o.questions);
+      track(run2, r);
+      const all = weigh(o.questions, r);
+      o.questions = keepQuestions(all);
+      node.data.jev = { kind: "questions", ms: r.ms, dropped: all.filter((q) => !o.questions.includes(q)).map((q) => q.q) };
+    }
+    if (node.kind === "converge" && o.all.length) {
+      const state = situation(run2, latest(run2, s, "frame"), o.question);
+      const allowed = ["commit"];
+      if (opts.loopsLeft > 0) {
+        if (o.top.length) allowed.push("develop");
+        if (o.research.length) allowed.push("research");
+        allowed.push("more");
+      }
+      if (opts.askAllowed && o.questions.length) allowed.push("ask");
+      const [g, w] = await Promise.all([gate(state, o, allowed), allowed.includes("ask") ? weighQuestions(state, o.questions) : null]);
+      track(run2, g);
+      if (w) {
+        track(run2, w);
+        o.questions = keepQuestions(weigh(o.questions, w));
+      }
+      const byId = Object.fromEntries(g.options.map((x) => [x.id, x]));
+      const dropped = o.top.filter((t) => byId[t.id]?.breaks >= 0.7).map((t) => t.id);
+      if (dropped.length) {
+        const keep = o.top.filter((t) => !dropped.includes(t.id));
+        const fill = g.options.filter((x) => x.breaks < 0.7 && !keep.some((t) => t.id === x.id)).sort((a, b) => b.fit - a.fit).slice(0, o.top.length - keep.length).map((x) => ({ id: x.id, why: `Jev: best remaining fit (${pct(x.fit)}) that keeps the hard constraints` }));
+        o.top = [...keep, ...fill];
+      }
+      const claude = { next: o.next, enough: o.enough };
+      const sure = g.next && (g.next === o.next ? g.confidence >= 0.5 : g.confidence >= 0.7);
+      if (sure) {
+        o.next = g.next;
+        o.enough = g.next === "commit";
+      }
+      node.data.jev = { kind: "gate", ms: g.ms + (w?.ms || 0), next: g.next, confidence: g.confidence, probabilities: g.probabilities, decidedBy: sure ? "jev" : "claude", claude, options: g.options, dropped };
+    }
+  } catch (e) {
+    jevError(node, e);
+  }
 }
 function after(run2, node, E, opts) {
   const s = node.scope;
@@ -901,7 +1102,7 @@ function after(run2, node, E, opts) {
     }
   }
 }
-function createRun({ input, model, effort, handsOff = false }) {
+function createRun({ input, model, effort, handsOff = false, jev: useJev }) {
   const now = /* @__PURE__ */ new Date();
   const words = input.split("\n").filter((l) => !l.startsWith("--- ")).join(" ").toLowerCase().match(/[a-z0-9]+/g);
   const slug = (words || ["thought"]).slice(0, 5).join("-").slice(0, 40);
@@ -916,6 +1117,7 @@ function createRun({ input, model, effort, handsOff = false }) {
     handsOff: !!handsOff,
     createdAt: now.toISOString(),
     status: "running",
+    jev: JEV_AVAILABLE && (useJev ?? model !== "dry"),
     seq: 0,
     nodes: {},
     order: [],
@@ -928,7 +1130,7 @@ function createRun({ input, model, effort, handsOff = false }) {
   runs.set(id, run2);
   const cap = add(run2, { kind: "capture", scope: "root", status: "done", out: { text: input } });
   after(run2, cap, EFFORT[run2.effort], {});
-  log(run2, "Run started on " + modelById(run2.model).label);
+  log(run2, "Run started on " + modelById(run2.model).label + (run2.jev ? ", Jev deciding the routes" : ""));
   tick(run2);
   return run2;
 }
@@ -937,10 +1139,30 @@ function need(run2, nodeId) {
   if (!n) throw new Error("No such step");
   return n;
 }
-function answer(run2, { nodeId, answers = [], skip = false }) {
+async function answer(run2, { nodeId, answers = [], skip = false, asIs = false }) {
   const n = need(run2, nodeId);
   if (n.kind !== "ask" || n.status !== "waiting") throw new Error("That step is not waiting for you");
-  n.out = { answers: answers.filter((a) => a.a?.trim()), skipped: skip || !answers.some((a) => a.a?.trim()) };
+  const given = answers.filter((a) => a.a?.trim());
+  if (run2.jev && !skip && !asIs && given.length && !n.data.checked) {
+    n.data.checked = true;
+    const matched = n.data.questions.map((q) => ({ q: q.q, a: given.find((a) => a.q === q.q)?.a })).filter((p) => p.a);
+    const pairs = matched.length ? matched : n.data.questions.map((q) => ({ q: q.q, a: given.map((a) => a.a).join(" / ") }));
+    try {
+      const r = await checkAnswers(pairs);
+      track(run2, r);
+      const unclear = pairs.filter((p, i) => r.each[i] < 0.3).map((p) => p.q);
+      if (unclear.length && n.status === "waiting") {
+        n.data.unclear = { questions: unclear, first: given };
+        log(run2, "Your input: needs a little more on " + unclear.length + " question" + (unclear.length > 1 ? "s" : ""));
+        changed(run2);
+        return { unclear };
+      }
+    } catch (e) {
+      log(run2, "Answer check skipped: " + String(e.message || e).slice(0, 80));
+    }
+  }
+  const all = [...n.data.unclear?.first || [], ...given];
+  n.out = { answers: all, skipped: skip || !all.length };
   n.status = "done";
   n.out.summary = n.out.skipped ? "You said: decide yourself" : `${n.out.answers.length} answer(s)`;
   log(run2, "Your input: " + n.out.summary);
@@ -4374,7 +4596,7 @@ createServer(async (req, res) => {
         json(res, 200, { ok: true });
         return setTimeout(() => process.exit(0), 50);
       }
-      if (what === "meta") return json(res, 200, { models: MODELS, methods: METHODS.map(({ id: id2, name, when }) => ({ id: id2, name, when })) });
+      if (what === "meta") return json(res, 200, { models: MODELS, jev: JEV_AVAILABLE, methods: METHODS.map(({ id: id2, name, when }) => ({ id: id2, name, when })) });
       if (what === "runs" && !id && req.method === "GET") return json(res, 200, listRuns());
       if (what === "runs" && !id && req.method === "POST") {
         const b = await body(req);
@@ -4394,8 +4616,8 @@ createServer(async (req, res) => {
         return res.end(file2);
       }
       if (ACTIONS[action] && req.method === "POST") {
-        ACTIONS[action](run2, await body(req));
-        return json(res, 200, { ok: true });
+        const r = await ACTIONS[action](run2, await body(req));
+        return json(res, 200, { ok: true, ...r?.unclear ? { unclear: r.unclear } : {} });
       }
       return json(res, 404, { error: "Unknown endpoint" });
     }

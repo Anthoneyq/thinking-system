@@ -4,6 +4,7 @@ import { SCHEMAS, SYSTEM, stepPrompt } from './prompts.js'
 import { methodById } from './methods.js'
 import { loadRuns, saveRun, writeRunFile } from './store.js'
 import { recordMarkdown } from './record.js'
+import * as jev from './jev.js'
 
 export const bus = new EventEmitter()
 bus.setMaxListeners(100)
@@ -178,16 +179,20 @@ async function start(run, node) {
     web: model.web,
     picks: run.picks[scope],
     pass: passOf(run, scope),
+    jev: run.jev,
   }
   try {
-    const prompt = stepPrompt(node.kind, node, context(run, scope), opts)
-    const { out, cost } = await callModel({
-      model: run.model, system: SYSTEM, prompt, schema: SCHEMAS[node.kind], kind: node.kind,
+    let res = node.kind === 'route' && run.jev ? await jevRoute(run, node, E) : null
+    if (!res) res = await callModel({
+      model: run.model, system: SYSTEM, prompt: stepPrompt(node.kind, node, context(run, scope), opts), schema: SCHEMAS[node.kind], kind: node.kind,
       web: node.kind === 'research' && model.web,
     })
-    run.cost += cost
+    run.cost += res.cost
     if (node.status !== 'running') return // superseded while the call was in flight
-    node.out = out
+    node.out = res.out
+    if (run.jev) await jevJudge(run, node, opts)
+    if (node.status !== 'running') return
+    const out = node.out
     node.status = 'done'
     node.endedAt = new Date().toISOString()
     log(run, `${node.title}: ${out.summary || 'done'}`)
@@ -199,6 +204,77 @@ async function start(run, node) {
     log(run, `${node.title}: failed`)
   }
   tick(run)
+}
+
+// ---------- Jev: fast judgments that steer the run; Claude's call stands whenever Jev is unsure or fails ----------
+function track(run, r) {
+  run.cost += r.cost
+  run.jevStats = { calls: (run.jevStats?.calls || 0) + 1, ms: (run.jevStats?.ms || 0) + r.ms }
+}
+const jevError = (node, e) => { node.data.jev = { ...node.data.jev, error: String(e.message || e).slice(0, 200) } }
+const pct = p => Math.round(p * 100) + '%'
+
+async function jevRoute(run, node, E) {
+  const s = node.scope
+  const frame = latest(run, s, 'frame')
+  const q = questionTrail(run, s).at(-1)?.text || run.input.slice(0, 300)
+  const review = latest(run, s, 'review')
+  const objections = node.title === 'Answer the objections' && review ? review.out.objections.map(o => o.text) : null
+  const done = inScope(run, s).filter(n => n.kind === 'method').map(n => n.data.method)
+  try {
+    const r = await jev.pickMethods(jev.situation(run, frame, q, objections ? { objections } : {}), { max: E.methods, exclude: node.data.followup ? done : [] })
+    track(run, r)
+    node.data.jev = { kind: 'route', ms: r.ms, simple: r.simple, scored: r.scored.slice(0, 8) }
+    if (!r.picks) { node.data.jev.fallback = 'No method was a clear fit, so Claude chose'; return null }
+    const focus = !node.data.followup ? q : objections ? "How to answer the skeptic's objections" : `What has not been considered yet about: ${q}`
+    const n = r.picks.length
+    return { cost: 0, out: {
+      summary: `Jev picked ${n} method${n > 1 ? 's' : ''} in ${(r.ms / 1000).toFixed(1)}s.`, simple: r.simple,
+      plan: r.picks.map(p => ({ method: p.id, focus, why: `Jev: ${pct(p.p)} likely to help`, checks: [] })),
+    } }
+  } catch (e) { jevError(node, e); return null }
+}
+
+// Keep only questions whose answer changes the result; Jev decides blocking when it is clear either way.
+function weigh(qs, r) {
+  return qs.map((q, i) => ({ ...q, jev: r.each[i], blocking: r.each[i].blocks >= 0.6 ? true : r.each[i].blocks <= 0.4 ? false : q.blocking }))
+}
+const keepQuestions = qs => qs.filter(q => !q.jev || q.jev.changes >= 0.35)
+
+async function jevJudge(run, node, opts) {
+  const o = node.out, s = node.scope
+  try {
+    if (node.kind === 'frame' && opts.askAllowed && o.questions.length) {
+      const r = await jev.weighQuestions(jev.situation(run, node, o.question), o.questions)
+      track(run, r)
+      const all = weigh(o.questions, r)
+      o.questions = keepQuestions(all)
+      node.data.jev = { kind: 'questions', ms: r.ms, dropped: all.filter(q => !o.questions.includes(q)).map(q => q.q) }
+    }
+    if (node.kind === 'converge' && o.all.length) {
+      const state = jev.situation(run, latest(run, s, 'frame'), o.question)
+      const allowed = ['commit']
+      if (opts.loopsLeft > 0) { if (o.top.length) allowed.push('develop'); if (o.research.length) allowed.push('research'); allowed.push('more') }
+      if (opts.askAllowed && o.questions.length) allowed.push('ask')
+      const [g, w] = await Promise.all([jev.gate(state, o, allowed), allowed.includes('ask') ? jev.weighQuestions(state, o.questions) : null])
+      track(run, g)
+      if (w) { track(run, w); o.questions = keepQuestions(weigh(o.questions, w)) }
+      // Hard constraints eliminate options; refill the shortlist from the best remaining fits.
+      const byId = Object.fromEntries(g.options.map(x => [x.id, x]))
+      const dropped = o.top.filter(t => byId[t.id]?.breaks >= 0.7).map(t => t.id)
+      if (dropped.length) {
+        const keep = o.top.filter(t => !dropped.includes(t.id))
+        const fill = g.options.filter(x => x.breaks < 0.7 && !keep.some(t => t.id === x.id)).sort((a, b) => b.fit - a.fit)
+          .slice(0, o.top.length - keep.length).map(x => ({ id: x.id, why: `Jev: best remaining fit (${pct(x.fit)}) that keeps the hard constraints` }))
+        o.top = [...keep, ...fill]
+      }
+      const claude = { next: o.next, enough: o.enough }
+      // Jev's call stands when it agrees with Claude, or overrules Claude only when clearly sure.
+      const sure = g.next && (g.next === o.next ? g.confidence >= 0.5 : g.confidence >= 0.7)
+      if (sure) { o.next = g.next; o.enough = g.next === 'commit' }
+      node.data.jev = { kind: 'gate', ms: g.ms + (w?.ms || 0), next: g.next, confidence: g.confidence, probabilities: g.probabilities, decidedBy: sure ? 'jev' : 'claude', claude, options: g.options, dropped }
+    }
+  } catch (e) { jevError(node, e) }
 }
 
 // What happens after each step: this is the dynamic routing.
@@ -296,7 +372,7 @@ function after(run, node, E, opts) {
 }
 
 // ---------- public actions ----------
-export function createRun({ input, model, effort, handsOff = false }) {
+export function createRun({ input, model, effort, handsOff = false, jev: useJev }) {
   const now = new Date()
   const words = input.split('\n').filter(l => !l.startsWith('--- ')).join(' ').toLowerCase().match(/[a-z0-9]+/g)
   const slug = (words || ['thought']).slice(0, 5).join('-').slice(0, 40)
@@ -305,12 +381,13 @@ export function createRun({ input, model, effort, handsOff = false }) {
   const run = {
     id, title: input.trim().split('\n').find(l => l.trim() && !l.startsWith('--- '))?.slice(0, 70) || 'Thought', input, model,
     effort: EFFORT[effort] ? effort : 'normal', handsOff: !!handsOff, createdAt: now.toISOString(), status: 'running',
+    jev: jev.JEV_AVAILABLE && (useJev ?? model !== 'dry'),
     seq: 0, nodes: {}, order: [], corrections: [], constraints: [], picks: {}, cost: 0, activity: [],
   }
   runs.set(id, run)
   const cap = add(run, { kind: 'capture', scope: 'root', status: 'done', out: { text: input } })
   after(run, cap, EFFORT[run.effort], {})
-  log(run, 'Run started on ' + modelById(run.model).label)
+  log(run, 'Run started on ' + modelById(run.model).label + (run.jev ? ', Jev deciding the routes' : ''))
   tick(run)
   return run
 }
@@ -321,10 +398,29 @@ function need(run, nodeId) {
   return n
 }
 
-export function answer(run, { nodeId, answers = [], skip = false }) {
+export async function answer(run, { nodeId, answers = [], skip = false, asIs = false }) {
   const n = need(run, nodeId)
   if (n.kind !== 'ask' || n.status !== 'waiting') throw new Error('That step is not waiting for you')
-  n.out = { answers: answers.filter(a => a.a?.trim()), skipped: skip || !answers.some(a => a.a?.trim()) }
+  const given = answers.filter(a => a.a?.trim())
+  // Jev checks the reply once. If it can't use part of it, the question stays open here for a little more.
+  if (run.jev && !skip && !asIs && given.length && !n.data.checked) {
+    n.data.checked = true
+    const matched = n.data.questions.map(q => ({ q: q.q, a: given.find(a => a.q === q.q)?.a })).filter(p => p.a)
+    const pairs = matched.length ? matched : n.data.questions.map(q => ({ q: q.q, a: given.map(a => a.a).join(' / ') })) // one reply from the chat
+    try {
+      const r = await jev.checkAnswers(pairs)
+      track(run, r)
+      const unclear = pairs.filter((p, i) => r.each[i] < 0.3).map(p => p.q)
+      if (unclear.length && n.status === 'waiting') {
+        n.data.unclear = { questions: unclear, first: given }
+        log(run, 'Your input: needs a little more on ' + unclear.length + ' question' + (unclear.length > 1 ? 's' : ''))
+        changed(run)
+        return { unclear }
+      }
+    } catch (e) { log(run, 'Answer check skipped: ' + String(e.message || e).slice(0, 80)) }
+  }
+  const all = [...(n.data.unclear?.first || []), ...given]
+  n.out = { answers: all, skipped: skip || !all.length }
   n.status = 'done'
   n.out.summary = n.out.skipped ? 'You said: decide yourself' : `${n.out.answers.length} answer(s)`
   log(run, 'Your input: ' + n.out.summary)

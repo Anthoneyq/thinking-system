@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 
 // Each run keeps its record on disk: THINK_RUNS_DIR, else runsDir in ~/.thinking-system/config.json, else ~/Thinking System/runs.
-const config = (() => { try { return JSON.parse(readFileSync(join(homedir(), '.thinking-system', 'config.json'), 'utf8')) } catch { return {} } })()
+export const config = (() => { try { return JSON.parse(readFileSync(join(homedir(), '.thinking-system', 'config.json'), 'utf8')) } catch { return {} } })()
 export const RUNS_DIR = process.env.THINK_RUNS_DIR || config.runsDir || join(homedir(), 'Thinking System', 'runs')
 
 const timers = new Map()

@@ -68,6 +68,7 @@ export default function RunView({ id }) {
         <div className="run-title">
           <h1>{run.title}</h1>
           <span className="sub">{modelName(run.model)} &middot; {run.effort}{run.cost > 0 ? ` \u00b7 $${run.cost.toFixed(2)}` : ''}</span>
+          {run.jev && <span className="jev-chip" title="Jev (TypeSafe) makes the routing calls; Claude writes the content">Jev{run.jevStats ? ` \u00b7 ${run.jevStats.calls} call${run.jevStats.calls === 1 ? '' : 's'} \u00b7 ${(run.jevStats.ms / 1000).toFixed(1)}s` : ''}</span>}
         </div>
         {run.status === 'paused' && <button className="primary" onClick={() => act('resume', {})}>Resume</button>}
         <div className="seg" role="radiogroup" aria-label="View">
@@ -167,13 +168,14 @@ function phase(run, scope) {
   const batch = n => ns.filter(x => x.kind === n.kind && x.deps.join() === n.deps.join())
   const waiting = ns.find(n => n.status === 'waiting')
   if (run.status === 'paused') return ['Paused', 'Press Resume to carry on.']
+  if (waiting?.data.unclear) return ['Back to you', `Jev needs a little more on ${many(waiting.data.unclear.questions.length, 'questions')}.`]
   if (waiting) return ['Back to you', `${waiting.data.questions.length} question${waiting.data.questions.length === 1 ? '' : 's'}. Answer, or let it decide.`]
   if (has('frame').length) return ns.filter(n => n.kind === 'frame').length > 1 ? ['Restating with your answers', 'Folding what you said back into the question.'] : ['Reading your thought', 'What you said, what it infers, what is missing.']
-  if (has('route').length) return ['Choosing directions', 'Picking the thinking methods that fit this.']
+  if (has('route').length) return ['Choosing directions', run.jev ? 'Jev is weighing every thinking method against the question.' : 'Picking the thinking methods that fit this.']
   if (has('develop').length) return [`Growing ${many(batch(has('develop')[0]).length, 'directions')} further`, names(batch(has('develop')[0]))]
   if (has('research').length) return ['Looking things up', names(has('research'))]
   if (has('method').length) return [`Branching out in ${many(batch(has('method')[0]).length, 'directions')}`, names(batch(has('method')[0]))]
-  if (has('converge').length) return ['Coming back together', 'Merging every branch and restating the question.']
+  if (has('converge').length) return ['Coming back together', run.jev ? 'Merging every branch and restating the question. Jev then decides what next.' : 'Merging every branch and restating the question.']
   if (has('review').length) return ['Arguing against it', 'One skeptic pass before committing.']
   if (has('decide').length) return ['Writing the decision', 'Recommendation, reasons, next action.']
   if (has('unstick').length) return ['Explaining plainly', names(has('unstick'))]
