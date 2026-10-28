@@ -32,7 +32,8 @@ async function fake(kind, prompt) {
         simple: false,
         plan: prompt.includes("follow-up pass") ? [] : [
           { method: "possibilities", focus: "What directions exist?", why: "Direction is open", checks: [] },
-          { method: "algorithm", focus: "What can be cut?", why: "Keep it lean", checks: [] }
+          { method: "algorithm", focus: "What can be cut?", why: "Keep it lean", checks: [] },
+          { method: "eisenhower", focus: "What comes first?", why: "Several things mixed", checks: [] }
         ]
       };
     case "method":
@@ -42,7 +43,14 @@ async function fake(kind, prompt) {
         options: [{ title: "Option A", detail: "Sample" }, { title: "Option B", detail: "Sample" }, { title: "Option C", detail: "Sample" }],
         cuts: [{ what: "Extra step", why: "Nobody asked for it" }],
         risks: ["Sample risk"],
-        unknowns: []
+        unknowns: ["Sample unknown from this branch"],
+        quadrant: prompt.includes('x = "Urgent"') ? { x: "Urgent", y: "Important", items: [
+          { text: "Send the proposal", x_high: true, y_high: true, note: "Do today" },
+          { text: "Plan Q1 offer", x_high: false, y_high: true, note: "Schedule Friday" },
+          { text: "Reply to vendor", x_high: true, y_high: false, note: "Delegate" },
+          { text: "Redesign logo", x_high: false, y_high: false, note: "Drop" }
+        ] } : { x: "", y: "", items: [] },
+        matrix: { criteria: [], rows: [] }
       };
     case "narrow":
       return {
@@ -66,7 +74,11 @@ async function fake(kind, prompt) {
         next: grow ? "develop" : ask2 ? "ask" : "commit",
         questions: ask2 ? [{ id: "q2", q: "Option A or Option B?", why: "Both fit; it is your call.", options: ["Option A", "Option B"], blocking: true }] : [],
         research: [],
-        stop_reason: "Sample."
+        stop_reason: "Sample.",
+        open_points: [
+          { id: "p1", text: "What matters most: speed, money or quality?", raised_in: ["frame", "possibilities", "algorithm"], times: 3, action: "ask", rank: 1, unlocks: "Which option wins" },
+          { id: "p2", text: "Is the budget fixed?", raised_in: ["algorithm"], times: 1, action: "ask", rank: 2, unlocks: "Whether option C stays" }
+        ].filter((p) => !prompt.includes(p.text + "\n  A:"))
       };
     }
     case "develop":
@@ -257,7 +269,7 @@ const METHODS = [
   {
     id: "eisenhower",
     name: "Urgent / important",
-    when: "A list of tasks or projects needs ordering.",
+    when: "Several tasks, projects, decisions or asks are mixed together and need ordering.",
     how: "Sort items into do now, schedule, delegate or automate, drop. Importance means it moves the stated goal."
   },
   {
@@ -346,6 +358,8 @@ const bool = { type: "boolean" };
 const arr = (items) => ({ type: "array", items });
 const oneOf = (...values) => ({ type: "string", enum: values });
 const obj = (props) => ({ type: "object", properties: props, required: Object.keys(props), additionalProperties: false });
+const num = { type: "number" };
+const int = { type: "integer" };
 const confidence = obj({ level: oneOf("low", "medium", "high"), basis: str });
 const question = obj({ id: str, q: str, why: str, options: arr(str), blocking: bool });
 const SCHEMAS = {
@@ -374,7 +388,9 @@ const SCHEMAS = {
     options: arr(obj({ title: str, detail: str })),
     cuts: arr(obj({ what: str, why: str })),
     risks: arr(str),
-    unknowns: arr(str)
+    unknowns: arr(str),
+    quadrant: obj({ x: str, y: str, items: arr(obj({ text: str, x_high: bool, y_high: bool, note: str })) }),
+    matrix: obj({ criteria: arr(obj({ name: str, weight: num })), rows: arr(obj({ option: str, scores: arr(num), total: num })) })
   }),
   narrow: obj({
     summary: str,
@@ -394,6 +410,7 @@ const SCHEMAS = {
     next: oneOf("commit", "ask", "develop", "research", "more"),
     questions: arr(question),
     research: arr(obj({ query: str, why: str })),
+    open_points: arr(obj({ id: str, text: str, raised_in: arr(str), times: int, action: oneOf("ask", "research", "test", "decide"), rank: int, unlocks: str })),
     stop_reason: str
   }),
   develop: obj({
@@ -497,7 +514,9 @@ For each pick give a focus (the exact question it should answer here) and why. F
 How: ${node.data.how}
 Focus: ${node.data.focus}
 ${node.data.checks?.length ? "Checks: " + node.data.checks.join("; ") : node.data.method === "domain-lens" ? "Choose the 3-6 standard checks for this subject yourself." : ""}
-Report findings (mark each evidence / inference / assumption), options this method surfaces, anything that should be cut and why, risks, and new unknowns. Keep it tight.`;
+Report findings (mark each evidence / inference / assumption), options this method surfaces, anything that should be cut and why, risks, and new unknowns. Keep it tight.
+${node.data.method === "eisenhower" ? 'quadrant: x = "Urgent", y = "Important". Place EVERY task, decision, ask or project the user mentioned (not your options) as one item each; note = one short line on what to do with it.' : node.data.method === "impact-effort" ? 'quadrant: x = "Effort", y = "Impact". Place every candidate action as one item each; note = one short line.' : 'quadrant: x = "", y = "", items = [].'}
+${node.data.method === "decision-matrix" ? "matrix: 2-5 criteria with weights summing to 1; one row per option with a 1-5 score per criterion (same order) and the weighted total. Options that break a hard constraint are left out, not scored low." : "matrix: criteria = [], rows = []."}`;
     case "converge":
       return head + `STEP: Come back together (pass ${opts.pass}). The branches so far have reported.
 1. Restate the question in its sharpest current form, given what was learned ("question", one sentence). "changed": what changed from the previous statement of the question in a few words, or "".
@@ -510,6 +529,7 @@ Report findings (mark each evidence / inference / assumption), options this meth
 Growth rounds left: ${opts.loopsLeft}. If 0, do not choose develop, research or more.${opts.loopsLeft > 0 && opts.pass === 1 ? " This is the first pass: prefer develop unless the answer is already obvious." : ""}
 ${opts.askAllowed ? "Asking is available." : "Asking is not available; do not choose ask."}
 If enough, next = commit. ${opts.jev ? "Whatever you choose, fill questions with up to 3 you would ask the user (only ones whose answer changes the recommendation; offer the top options as answer choices where natural) and research with up to 3 queries that could be looked up; a separate gate may use either. Empty lists are fine when none apply." : "Fill questions only for ask and research only for research."}
+open_points: every point still open anywhere (frame unknowns, branch unknowns, unanswered questions, risks that need a call). Merge points that ask the same thing into one; raised_in = every place it came up ("frame", method ids, or grown direction titles); times = how many times it came up. Leave out points the user already settled. rank 1 = settle first because other points or the recommendation depend on it; unlocks = what settling it decides, in a few words. Max 8.
 stop_reason: one sentence on why you stop or continue.
 ${opts.picks ? "The user picked these and their choice wins: " + opts.picks : ""}`;
     case "develop":
@@ -604,7 +624,7 @@ function writeRunFile(run2, name, content) {
 function recordMarkdown(run2) {
   const all = run2.order.map((id) => run2.nodes[id]).filter((n) => n.status === "done" && n.scope === "root");
   const last = (kind) => all.filter((n) => n.kind === kind).at(-1)?.out;
-  const d = last("decide"), f = last("frame"), narrow = last("narrow"), review = last("review");
+  const d = last("decide"), f = last("frame"), narrow = last("converge") || last("narrow"), review = last("review");
   const bullets = (xs) => (xs || []).map((x) => `- ${x}`).join("\n") || "- none";
   const lines = [
     `# ${d.title}`,
@@ -653,6 +673,9 @@ function recordMarkdown(run2) {
     bullets(f.inferred.map((i) => `${i.text} (why: ${i.why})`)),
     ""
   );
+  const open = last("converge")?.open_points;
+  if (open?.length) lines.push("## Still open, in the order to settle them", bullets([...open].sort((a, b) => a.rank - b.rank).map((p) => `${p.text} (came up ${p.times}x: ${p.raised_in.join(", ")}; ${p.action}; settles: ${p.unlocks})`)), "");
+  if (run2.pointAnswers?.length) lines.push("## Points you settled", bullets(run2.pointAnswers.map((a) => `${a.point} -> ${a.text}`)), "");
   if (run2.corrections.length) lines.push("## Your corrections", bullets(run2.corrections.map((c) => `${c.action}: ${c.original}${c.text ? " -> " + c.text : ""}`)), "");
   if (narrow) lines.push("## Every option considered", bullets(narrow.all.map((o) => `${o.title}: ${o.detail}`)), "");
   if (review) lines.push("## Skeptic objections", bullets(review.objections.map((o) => `[${o.severity}] ${o.text} Fix: ${o.fix}`)), "");
@@ -879,6 +902,8 @@ ${run2.input.slice(0, 2e3)}`
   const rules = readRules();
   if (rules.length) parts.push("STANDING RULES THE USER APPROVED (apply when one fits instead of re-deciding or re-asking; say which you applied):\n" + list$1(rules, (r) => `- ${r}`));
   if (run2.corrections.length) parts.push("CORRECTIONS FROM THE USER (these override any inference):\n" + list$1(run2.corrections, (c) => c.action === "reject" ? `- NOT TRUE: ${c.original}` : c.action === "edit" ? `- Instead of "${c.original}": ${c.text}` : `- CONFIRMED: ${c.original}`));
+  if (run2.pointAnswers?.length) parts.push("OPEN POINTS THE USER SETTLED (each answer covers every place the point came up):\n" + list$1(run2.pointAnswers, (a) => `- ${a.point}
+  A: ${a.text}`));
   if (run2.constraints.length) parts.push("CONSTRAINTS THE USER FLAGGED:\n" + list$1(run2.constraints, (c) => `- ${c.text}`));
   const answers = inScope(run2, scope).filter((n) => n.kind === "ask" && n.status === "done");
   const qa = answers.flatMap((n) => n.out.skipped ? [{ q: "(user skipped questions)", a: "Decide yourself." }] : n.out.answers);
@@ -904,7 +929,9 @@ Earlier versions: ${trail.slice(0, -1).map((q) => q.text).join(" | ")}` : ""));
     ...n.out.findings.map((f) => `- [${f.kind}] ${f.text}`),
     n.out.options.length ? "Options: " + n.out.options.map((o) => `${o.title}: ${o.detail}`).join(" | ") : "",
     n.out.cuts.length ? "Cut: " + n.out.cuts.map((c) => `${c.what} (${c.why})`).join(" | ") : "",
-    n.out.risks.length ? "Risks: " + n.out.risks.join("; ") : ""
+    n.out.risks.length ? "Risks: " + n.out.risks.join("; ") : "",
+    n.out.quadrant?.items?.length ? `Grid (${n.out.quadrant.x} / ${n.out.quadrant.y}): ` + n.out.quadrant.items.map((i) => `${i.text} [${i.x_high ? "high" : "low"} ${n.out.quadrant.x}, ${i.y_high ? "high" : "low"} ${n.out.quadrant.y}]`).join("; ") : "",
+    n.out.matrix?.rows?.length ? "Matrix totals: " + n.out.matrix.rows.map((r) => `${r.option} ${r.total}`).join("; ") : ""
   ].filter(Boolean).join("\n")));
   const research = inScope(run2, scope).filter((n) => n.kind === "research" && n.status === "done");
   if (research.length) parts.push("RESEARCH:\n" + list$1(research, (n) => `## ${n.data.query}${n.out.verified ? "" : " (unverified)"}
@@ -1182,6 +1209,7 @@ function createRun({ input, model, effort, handsOff = false, jev: useJev }) {
     order: [],
     corrections: [],
     constraints: [],
+    pointAnswers: [],
     picks: {},
     cost: 0,
     activity: []
@@ -1253,13 +1281,25 @@ function rerun(run2, { nodeId }) {
   log(run2, `${n.title}: redoing this step and everything after it`);
   tick(run2);
 }
-function correct(run2, { original, action, text = "", frameId }) {
+function correct(run2, { original, action, text = "", frameId, nodeId }) {
   run2.corrections = run2.corrections.filter((c) => c.original !== original);
-  run2.corrections.push({ original, action, text });
+  run2.corrections.push({ original, action, text, from: nodeId || frameId });
   log(run2, action === "confirm" ? `Confirmed: ${original}` : `Corrected: ${original}`);
+  const src = nodeId && run2.nodes[nodeId];
+  if (src && src.status === "done" && src.kind !== "frame") return action === "confirm" ? changed(run2) : rerun(run2, { nodeId });
   const scope = run2.nodes[frameId]?.scope || "root";
   const frame = inScope(run2, scope).filter((n) => n.kind === "frame" && n.status === "done").at(-1);
   if (action !== "confirm" && frame) return rerun(run2, { nodeId: frame.id });
+  changed(run2);
+}
+function settle(run2, { point, text, scope = "root" }) {
+  if (!point?.trim() || !text?.trim()) throw new Error("Write an answer first");
+  run2.pointAnswers = (run2.pointAnswers || []).filter((a) => a.point !== point);
+  run2.pointAnswers.push({ point, text, scope, at: (/* @__PURE__ */ new Date()).toISOString() });
+  log(run2, `Settled: ${point}`);
+  if (inScope(run2, scope).some((n) => n.status === "queued" || n.status === "running")) return changed(run2);
+  const target = latest(run2, scope, "converge") || latest(run2, scope, "frame");
+  if (target) return rerun(run2, { nodeId: target.id });
   changed(run2);
 }
 function stuck(run2, { nodeId, note = "" }) {
@@ -4078,7 +4118,7 @@ function alignCoordinates(xss, alignTo) {
   });
 }
 function balance(xss, align) {
-  return util$3.mapValues(xss.ul, (num, v) => {
+  return util$3.mapValues(xss.ul, (num2, v) => {
     if (align) {
       return xss[align.toLowerCase()][v];
     } else {
@@ -4622,7 +4662,7 @@ const body = (req) => new Promise((resolve, reject) => {
     }
   });
 });
-const ACTIONS = { answer, rerun, correct, stuck, deeper, pick: pick$1, resume };
+const ACTIONS = { answer, rerun, correct, stuck, deeper, pick: pick$1, resume, settle };
 function sse(req, res, run2) {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
   let timer = null;

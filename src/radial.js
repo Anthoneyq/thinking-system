@@ -7,8 +7,8 @@ const at = (deg, r) => ({ x: Math.cos(rad(deg)) * r * SQUASH, y: Math.sin(rad(de
 
 export function leavesOf(n) {
   if (n.status !== 'done' || !n.out) return []
-  if (n.kind === 'method') return n.out.options.slice(0, 4).map(o => o.title)
-  if (n.kind === 'develop') return n.out.sub_options.slice(0, 3).map(o => o.title)
+  if (n.kind === 'method') return n.out.options.slice(0, 4)
+  if (n.kind === 'develop') return n.out.sub_options.slice(0, 3)
   return []
 }
 
@@ -51,7 +51,7 @@ export function radial(run, scope) {
     edges.push({ id: `p-${n.id}`, source: 'center', target: n.id, type: 'petal', n, outHidden: !!parent })
     const leaves = leavesOf(n)
     const spread = Math.min(step * 0.6, ringOf(n) === 1 ? 70 : 34)
-    leaves.forEach((title, j) => {
+    leaves.forEach(({ title }, j) => {
       const a = angle[n.id] + (leaves.length > 1 ? (j / (leaves.length - 1) - 0.5) * spread : 0)
       const q = at(a, radius[n.id] + LEAF)
       const id = `${n.id}-l${j}`

@@ -23,13 +23,18 @@ export async function fake(kind, prompt) {
       plan: prompt.includes('follow-up pass') ? [] : [
         { method: 'possibilities', focus: 'What directions exist?', why: 'Direction is open', checks: [] },
         { method: 'algorithm', focus: 'What can be cut?', why: 'Keep it lean', checks: [] },
+        { method: 'eisenhower', focus: 'What comes first?', why: 'Several things mixed', checks: [] },
       ],
     }
     case 'method': return {
       summary: 'Sample method output.',
       findings: [{ text: 'Sample finding', kind: 'inference' }],
       options: [{ title: 'Option A', detail: 'Sample' }, { title: 'Option B', detail: 'Sample' }, { title: 'Option C', detail: 'Sample' }],
-      cuts: [{ what: 'Extra step', why: 'Nobody asked for it' }], risks: ['Sample risk'], unknowns: [],
+      cuts: [{ what: 'Extra step', why: 'Nobody asked for it' }], risks: ['Sample risk'], unknowns: ['Sample unknown from this branch'],
+      quadrant: prompt.includes('x = "Urgent"') ? { x: 'Urgent', y: 'Important', items: [
+        { text: 'Send the proposal', x_high: true, y_high: true, note: 'Do today' }, { text: 'Plan Q1 offer', x_high: false, y_high: true, note: 'Schedule Friday' },
+        { text: 'Reply to vendor', x_high: true, y_high: false, note: 'Delegate' }, { text: 'Redesign logo', x_high: false, y_high: false, note: 'Drop' }] } : { x: '', y: '', items: [] },
+      matrix: { criteria: [], rows: [] },
     }
     case 'narrow': return {
       summary: 'Five options found, three kept.',
@@ -49,6 +54,10 @@ export async function fake(kind, prompt) {
         next: grow ? 'develop' : ask ? 'ask' : 'commit',
         questions: ask ? [{ id: 'q2', q: 'Option A or Option B?', why: 'Both fit; it is your call.', options: ['Option A', 'Option B'], blocking: true }] : [],
         research: [], stop_reason: 'Sample.',
+        open_points: [
+          { id: 'p1', text: 'What matters most: speed, money or quality?', raised_in: ['frame', 'possibilities', 'algorithm'], times: 3, action: 'ask', rank: 1, unlocks: 'Which option wins' },
+          { id: 'p2', text: 'Is the budget fixed?', raised_in: ['algorithm'], times: 1, action: 'ask', rank: 2, unlocks: 'Whether option C stays' },
+        ].filter(p => !prompt.includes(p.text + '\n  A:')),
       }
     }
     case 'develop': return {

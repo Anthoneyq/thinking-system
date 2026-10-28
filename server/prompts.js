@@ -7,6 +7,8 @@ const arr = items => ({ type: 'array', items })
 const oneOf = (...values) => ({ type: 'string', enum: values })
 const obj = props => ({ type: 'object', properties: props, required: Object.keys(props), additionalProperties: false })
 
+const num = { type: 'number' }
+const int = { type: 'integer' }
 const confidence = obj({ level: oneOf('low', 'medium', 'high'), basis: str })
 const question = obj({ id: str, q: str, why: str, options: arr(str), blocking: bool })
 
@@ -37,6 +39,8 @@ export const SCHEMAS = {
     cuts: arr(obj({ what: str, why: str })),
     risks: arr(str),
     unknowns: arr(str),
+    quadrant: obj({ x: str, y: str, items: arr(obj({ text: str, x_high: bool, y_high: bool, note: str })) }),
+    matrix: obj({ criteria: arr(obj({ name: str, weight: num })), rows: arr(obj({ option: str, scores: arr(num), total: num })) }),
   }),
   narrow: obj({
     summary: str,
@@ -56,6 +60,7 @@ export const SCHEMAS = {
     next: oneOf('commit', 'ask', 'develop', 'research', 'more'),
     questions: arr(question),
     research: arr(obj({ query: str, why: str })),
+    open_points: arr(obj({ id: str, text: str, raised_in: arr(str), times: int, action: oneOf('ask', 'research', 'test', 'decide'), rank: int, unlocks: str })),
     stop_reason: str,
   }),
   develop: obj({
@@ -160,7 +165,12 @@ For each pick give a focus (the exact question it should answer here) and why. F
 How: ${node.data.how}
 Focus: ${node.data.focus}
 ${node.data.checks?.length ? 'Checks: ' + node.data.checks.join('; ') : node.data.method === 'domain-lens' ? 'Choose the 3-6 standard checks for this subject yourself.' : ''}
-Report findings (mark each evidence / inference / assumption), options this method surfaces, anything that should be cut and why, risks, and new unknowns. Keep it tight.`
+Report findings (mark each evidence / inference / assumption), options this method surfaces, anything that should be cut and why, risks, and new unknowns. Keep it tight.
+${node.data.method === 'eisenhower' ? 'quadrant: x = "Urgent", y = "Important". Place EVERY task, decision, ask or project the user mentioned (not your options) as one item each; note = one short line on what to do with it.'
+  : node.data.method === 'impact-effort' ? 'quadrant: x = "Effort", y = "Impact". Place every candidate action as one item each; note = one short line.'
+  : 'quadrant: x = "", y = "", items = [].'}
+${node.data.method === 'decision-matrix' ? 'matrix: 2-5 criteria with weights summing to 1; one row per option with a 1-5 score per criterion (same order) and the weighted total. Options that break a hard constraint are left out, not scored low.'
+  : 'matrix: criteria = [], rows = [].'}`
     case 'converge':
       return head + `STEP: Come back together (pass ${opts.pass}). The branches so far have reported.
 1. Restate the question in its sharpest current form, given what was learned ("question", one sentence). "changed": what changed from the previous statement of the question in a few words, or "".
@@ -175,6 +185,7 @@ ${opts.askAllowed ? 'Asking is available.' : 'Asking is not available; do not ch
 If enough, next = commit. ${opts.jev
   ? 'Whatever you choose, fill questions with up to 3 you would ask the user (only ones whose answer changes the recommendation; offer the top options as answer choices where natural) and research with up to 3 queries that could be looked up; a separate gate may use either. Empty lists are fine when none apply.'
   : 'Fill questions only for ask and research only for research.'}
+open_points: every point still open anywhere (frame unknowns, branch unknowns, unanswered questions, risks that need a call). Merge points that ask the same thing into one; raised_in = every place it came up ("frame", method ids, or grown direction titles); times = how many times it came up. Leave out points the user already settled. rank 1 = settle first because other points or the recommendation depend on it; unlocks = what settling it decides, in a few words. Max 8.
 stop_reason: one sentence on why you stop or continue.
 ${opts.picks ? 'The user picked these and their choice wins: ' + opts.picks : ''}`
     case 'develop':

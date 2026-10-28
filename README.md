@@ -36,6 +36,8 @@ Claude still writes everything you read. Jev's call stands when it agrees with C
 
 From a terminal: `node <plugin folder>/bin/think.mjs "your thought"` (`--effort quick|normal|deep`, `--model claude-opus-5-5`, `--hands-off`, `--no-jev`, `--wait`).
 
+The side panel lists what is **still open**, merged across every branch: how many times each point came up and where, in the order to settle it. Answer a point once and it covers every place it came up. **How it's thinking** shows each pass (which tools went out, what came back, whether Jev or Claude made the call) and which model wrote what. Inferences and assumptions inside any branch can be marked right, wrong or changed; that branch redoes itself. Urgent/important and impact/effort branches draw their 2x2, decision matrices draw their table, and every outer leaf opens to show where the option came from and what became of it.
+
 On the map, any box can be marked **Stuck / don't get this** (it explains plainly and treats the blocker as a constraint), taken **a level deeper** (a full sub-map), or **redone**. Correcting something it inferred redoes everything after it.
 
 Every decision is tagged **Decide**, **Test first**, **Defer** or **Your call**, says whether it is easy or hard to undo, what it displaces, and what should reopen it. When a call would settle similar cases, it offers an if-then rule; click **Save as standing rule** (or say yes in chat) and every later run applies it instead of asking again. Rules live in `~/.thinking-system/rules.md` (or `{"rulesFile": "..."}` in config.json); edit or delete lines freely. The skeptic step also lists claims that trace to nothing you said, gave or it looked up: another model agreeing does not count as evidence.

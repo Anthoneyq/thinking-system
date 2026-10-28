@@ -36,12 +36,21 @@ function BranchNode({ data }) {
       <Hs />
       <div className="b-head"><span>{n.kind === 'method' ? 'Branch' : KIND_LABEL[n.kind]}</span><i /></div>
       <div className="b-title">{n.title}</div>
+      {n.out?.quadrant?.items?.length > 0 && <MiniQuad q={n.out.quadrant} />}
       <div className="b-sum">{n.status === 'running' ? <span className="thinking"><b /><b /><b /></span> : summary(n)}</div>
     </div>
   )
 }
 
-const LeafNode = ({ data }) => <div className="lnode" style={{ animationDelay: data.i * 90 + 'ms' }}><Hs />{data.title}</div>
+// Tiny 2x2 with the count in each box, so a grid branch reads as a grid from the map.
+function MiniQuad({ q }) {
+  const hiFirst = !/effort/i.test(q.x)
+  const cell = (yh, xh) => q.items.filter(i => i.y_high === yh && i.x_high === xh).length
+  const cols = hiFirst ? [true, false] : [false, true]
+  return <div className="b-quad" title={`${q.y} by ${q.x}`}>{[true, false].flatMap(yh => cols.map(xh => <span key={'' + yh + xh} className={yh && xh === hiFirst ? 'hot' : ''}>{cell(yh, xh) || ''}</span>))}</div>
+}
+
+const LeafNode = ({ data }) => <div className={'lnode' + (data.selected ? ' is-selected' : '')} style={{ animationDelay: data.i * 90 + 'ms' }}><Hs />{data.title}</div>
 
 function RingsNode({ data }) {
   const { radii, squash, size } = data
@@ -101,7 +110,7 @@ export default function MapView({ run, scope, sel, setSel }) {
     ...laid.map(p => ({
       id: p.id, type: p.type, position: { x: p.x - p.w / 2, y: p.y - p.h / 2 }, width: p.w, height: p.h, draggable: false,
       data: p.type === 'center' ? { trail, decision: decideNode?.out, waiting, passes, selected: !sel }
-        : p.type === 'leaf' ? { title: p.title, i: p.i, parent: p.parentNode }
+        : p.type === 'leaf' ? { title: p.title, i: p.i, parent: p.parentNode, selected: sel === p.id }
         : { n: p.n, selected: sel === p.id },
     })),
   ]
@@ -125,7 +134,7 @@ export default function MapView({ run, scope, sel, setSel }) {
   return (
     <div className="flow map" ref={box}>
       <ReactFlow nodes={rfNodes} edges={rfEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} nodesConnectable={false} elementsSelectable
-        onNodeClick={(_, n) => setSel(n.type === 'center' ? null : n.type === 'leaf' ? n.data.parent : n.type === 'rings' ? sel : n.id)}
+        onNodeClick={(_, n) => setSel(n.type === 'center' ? null : n.type === 'rings' ? sel : n.id)}
         minZoom={0.25} maxZoom={1.6} proOptions={{ hideAttribution: true }}>
         <Controls showInteractive={false} />
       </ReactFlow>

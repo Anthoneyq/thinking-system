@@ -2,7 +2,7 @@
 export function recordMarkdown(run) {
   const all = run.order.map(id => run.nodes[id]).filter(n => n.status === 'done' && n.scope === 'root')
   const last = kind => all.filter(n => n.kind === kind).at(-1)?.out
-  const d = last('decide'), f = last('frame'), narrow = last('narrow'), review = last('review')
+  const d = last('decide'), f = last('frame'), narrow = last('converge') || last('narrow'), review = last('review')
   const bullets = xs => (xs || []).map(x => `- ${x}`).join('\n') || '- none'
   const lines = [
     `# ${d.title}`, '',
@@ -23,6 +23,9 @@ export function recordMarkdown(run) {
   if (f) lines.push(`## What you said vs what was inferred`,
     `**Goal (${f.goal.source}):** ${f.goal.text}`, '', '**Stated**', bullets(f.stated), '',
     '**Inferred**', bullets(f.inferred.map(i => `${i.text} (why: ${i.why})`)), '')
+  const open = last('converge')?.open_points
+  if (open?.length) lines.push('## Still open, in the order to settle them', bullets([...open].sort((a, b) => a.rank - b.rank).map(p => `${p.text} (came up ${p.times}x: ${p.raised_in.join(', ')}; ${p.action}; settles: ${p.unlocks})`)), '')
+  if (run.pointAnswers?.length) lines.push('## Points you settled', bullets(run.pointAnswers.map(a => `${a.point} -> ${a.text}`)), '')
   if (run.corrections.length) lines.push('## Your corrections', bullets(run.corrections.map(c => `${c.action}: ${c.original}${c.text ? ' -> ' + c.text : ''}`)), '')
   if (narrow) lines.push('## Every option considered', bullets(narrow.all.map(o => `${o.title}: ${o.detail}`)), '')
   if (review) lines.push('## Skeptic objections', bullets(review.objections.map(o => `[${o.severity}] ${o.text} Fix: ${o.fix}`)), '')

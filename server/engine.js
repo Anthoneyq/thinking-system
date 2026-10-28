@@ -110,6 +110,7 @@ function context(run, scope) {
   if (rules.length) parts.push('STANDING RULES THE USER APPROVED (apply when one fits instead of re-deciding or re-asking; say which you applied):\n' + list(rules, r => `- ${r}`))
   if (run.corrections.length) parts.push('CORRECTIONS FROM THE USER (these override any inference):\n' +
     list(run.corrections, c => c.action === 'reject' ? `- NOT TRUE: ${c.original}` : c.action === 'edit' ? `- Instead of "${c.original}": ${c.text}` : `- CONFIRMED: ${c.original}`))
+  if (run.pointAnswers?.length) parts.push('OPEN POINTS THE USER SETTLED (each answer covers every place the point came up):\n' + list(run.pointAnswers, a => `- ${a.point}\n  A: ${a.text}`))
   if (run.constraints.length) parts.push('CONSTRAINTS THE USER FLAGGED:\n' + list(run.constraints, c => `- ${c.text}`))
   const answers = inScope(run, scope).filter(n => n.kind === 'ask' && n.status === 'done')
   const qa = answers.flatMap(n => n.out.skipped ? [{ q: '(user skipped questions)', a: 'Decide yourself.' }] : n.out.answers)
@@ -129,6 +130,8 @@ function context(run, scope) {
     n.out.options.length ? 'Options: ' + n.out.options.map(o => `${o.title}: ${o.detail}`).join(' | ') : '',
     n.out.cuts.length ? 'Cut: ' + n.out.cuts.map(c => `${c.what} (${c.why})`).join(' | ') : '',
     n.out.risks.length ? 'Risks: ' + n.out.risks.join('; ') : '',
+    n.out.quadrant?.items?.length ? `Grid (${n.out.quadrant.x} / ${n.out.quadrant.y}): ` + n.out.quadrant.items.map(i => `${i.text} [${i.x_high ? 'high' : 'low'} ${n.out.quadrant.x}, ${i.y_high ? 'high' : 'low'} ${n.out.quadrant.y}]`).join('; ') : '',
+    n.out.matrix?.rows?.length ? 'Matrix totals: ' + n.out.matrix.rows.map(r => `${r.option} ${r.total}`).join('; ') : '',
   ].filter(Boolean).join('\n')))
   const research = inScope(run, scope).filter(n => n.kind === 'research' && n.status === 'done')
   if (research.length) parts.push('RESEARCH:\n' + list(research, n => `## ${n.data.query}${n.out.verified ? '' : ' (unverified)'}\n` +
@@ -384,7 +387,7 @@ export function createRun({ input, model, effort, handsOff = false, jev: useJev 
     id, title: input.trim().split('\n').find(l => l.trim() && !l.startsWith('--- '))?.slice(0, 70) || 'Thought', input, model,
     effort: EFFORT[effort] ? effort : 'normal', handsOff: !!handsOff, createdAt: now.toISOString(), status: 'running',
     jev: jev.JEV_AVAILABLE && (useJev ?? model !== 'dry'),
-    seq: 0, nodes: {}, order: [], corrections: [], constraints: [], picks: {}, cost: 0, activity: [],
+    seq: 0, nodes: {}, order: [], corrections: [], constraints: [], pointAnswers: [], picks: {}, cost: 0, activity: [],
   }
   runs.set(id, run)
   const cap = add(run, { kind: 'capture', scope: 'root', status: 'done', out: { text: input } })
@@ -455,13 +458,29 @@ export function rerun(run, { nodeId }) {
   tick(run)
 }
 
-export function correct(run, { original, action, text = '', frameId }) {
+export function correct(run, { original, action, text = '', frameId, nodeId }) {
   run.corrections = run.corrections.filter(c => c.original !== original)
-  run.corrections.push({ original, action, text })
+  run.corrections.push({ original, action, text, from: nodeId || frameId })
   log(run, action === 'confirm' ? `Confirmed: ${original}` : `Corrected: ${original}`)
+  // A finding inside a branch: redo that branch and what follows, not the whole run.
+  const src = nodeId && run.nodes[nodeId]
+  if (src && src.status === 'done' && src.kind !== 'frame') return action === 'confirm' ? changed(run) : rerun(run, { nodeId })
   const scope = run.nodes[frameId]?.scope || 'root'
   const frame = inScope(run, scope).filter(n => n.kind === 'frame' && n.status === 'done').at(-1)
   if (action !== 'confirm' && frame) return rerun(run, { nodeId: frame.id })
+  changed(run)
+}
+
+// One answer to an open point settles it everywhere it came up; the latest merge redoes itself with it.
+export function settle(run, { point, text, scope = 'root' }) {
+  if (!point?.trim() || !text?.trim()) throw new Error('Write an answer first')
+  run.pointAnswers = (run.pointAnswers || []).filter(a => a.point !== point)
+  run.pointAnswers.push({ point, text, scope, at: new Date().toISOString() })
+  log(run, `Settled: ${point}`)
+  // Steps still to run will read the answer anyway; only a finished pass needs redoing.
+  if (inScope(run, scope).some(n => n.status === 'queued' || n.status === 'running')) return changed(run)
+  const target = latest(run, scope, 'converge') || latest(run, scope, 'frame')
+  if (target) return rerun(run, { nodeId: target.id })
   changed(run)
 }
 

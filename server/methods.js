@@ -14,7 +14,7 @@ export const METHODS = [
     how: 'Look through facts, feelings, risks, benefits, new ideas and process. Report only what each view adds.' },
   { id: 'decision-matrix', name: 'Decision matrix', when: 'Several concrete options must be compared on several criteria.',
     how: 'Pick the few criteria that matter, weight them, score options. Hard constraints eliminate options before scoring; they are never averaged away. Scores aid judgment, they are not the answer.' },
-  { id: 'eisenhower', name: 'Urgent / important', when: 'A list of tasks or projects needs ordering.',
+  { id: 'eisenhower', name: 'Urgent / important', when: 'Several tasks, projects, decisions or asks are mixed together and need ordering.',
     how: 'Sort items into do now, schedule, delegate or automate, drop. Importance means it moves the stated goal.' },
   { id: 'impact-effort', name: 'Impact vs effort', when: 'Many possible actions, limited time.',
     how: 'Place each action on impact and effort. Name the quick wins, the big bets, and what to skip.' },

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position, MarkerType, useReactFlow } from '@xyflow/react'
 import { layout } from '../shared/layout.js'
-import { api, go, summary, KIND_LABEL } from './api.js'
+import { api, go, summary, KIND_LABEL, modelName } from './api.js'
 import Panel from './Panel.jsx'
 import MapView from './MapView.jsx'
 
@@ -95,7 +95,7 @@ export default function RunView({ id }) {
           </ReactFlowProvider>
           <Caption run={run} scope={scope} />
         </section>
-        <Panel run={run} node={node} scope={scope} act={act} setSel={setSel} setScope={setScope} />
+        <Panel run={run} node={node} sel={sel} scope={scope} act={act} setSel={setSel} setScope={setScope} />
       </div>
     </div>
   )
@@ -155,7 +155,6 @@ function Flow({ run, scope, showOld, sel, setSel, onOpenChild }) {
   )
 }
 
-const modelName = id => ({ 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-opus-5-5': 'Opus 5.5', 'claude-fable-5-1': 'Fable 5.1', 'claude-haiku-5-5': 'Haiku 5.5', codex: 'GPT (Codex)', dry: 'Dry run' })[id] || id
 
 // The live narration: what the system is doing right now, in plain words.
 function phase(run, scope) {

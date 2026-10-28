@@ -23,7 +23,7 @@ const body = req => new Promise((resolve, reject) => {
   req.on('end', () => { try { resolve(s ? JSON.parse(s) : {}) } catch (e) { reject(e) } })
 })
 
-const ACTIONS = { answer: engine.answer, rerun: engine.rerun, correct: engine.correct, stuck: engine.stuck, deeper: engine.deeper, pick: engine.pick, resume: engine.resume }
+const ACTIONS = { answer: engine.answer, rerun: engine.rerun, correct: engine.correct, stuck: engine.stuck, deeper: engine.deeper, pick: engine.pick, resume: engine.resume, settle: engine.settle }
 
 function sse(req, res, run) {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })

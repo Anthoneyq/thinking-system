@@ -27,3 +27,5 @@ export const KIND_LABEL = {
   capture: 'Input', frame: 'Frame', ask: 'You', route: 'Router', method: 'Method', narrow: 'Wide to narrow',
   assess: 'Confidence gate', converge: 'Come together', develop: 'Grow', research: 'Research', review: 'Adversarial', decide: 'Record', unstick: 'Unstick',
 }
+
+export const modelName = id => ({ 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-opus-5-5': 'Opus 5.5', 'claude-fable-5-1': 'Fable 5.1', 'claude-haiku-5-5': 'Haiku 5.5', codex: 'GPT (Codex)', dry: 'Dry run' })[id] || id

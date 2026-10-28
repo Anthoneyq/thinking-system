@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { KIND_LABEL, api } from './api.js'
+import { KIND_LABEL, api, modelName } from './api.js'
+import { leavesOf } from './radial.js'
 
 const latest = (run, scope, kind) => run.order.map(i => run.nodes[i]).filter(n => n.scope === scope && n.kind === kind && n.status === 'done').at(-1)
 
-export default function Panel({ run, node, scope, act, setSel, setScope }) {
+export default function Panel({ run, node, sel, scope, act, setSel, setScope }) {
   // Back to the top whenever the subject changes or a decision lands.
   const ref = useRef(null)
   const decided = latest(run, scope, 'decide')?.id
-  useEffect(() => { ref.current?.scrollTo({ top: 0 }) }, [node?.id, scope, decided])
+  useEffect(() => { ref.current?.scrollTo({ top: 0 }) }, [sel, scope, decided])
+  const leaf = !node && sel?.match(/^(.+)-l(\d+)$/)
   return (
     <aside className="panel" ref={ref}>
-      {node ? <NodeDetail key={node.id} run={run} n={node} act={act} setSel={setSel} setScope={setScope} /> : <Overview run={run} scope={scope} act={act} setSel={setSel} />}
+      {leaf && run.nodes[leaf[1]] ? <LeafDetail run={run} parent={run.nodes[leaf[1]]} j={+leaf[2]} setSel={setSel} />
+        : node ? <NodeDetail key={node.id} run={run} n={node} act={act} setSel={setSel} setScope={setScope} /> : <Overview run={run} scope={scope} act={act} setSel={setSel} />}
     </aside>
   )
 }
@@ -27,7 +30,9 @@ function Overview({ run, scope, act, setSel }) {
         </button>
       )}
       {decide && <Decision o={decide.out} runId={run.id} />}
+      <OpenPoints run={run} scope={scope} act={act} setSel={setSel} />
       <Trail run={run} scope={scope} setSel={setSel} />
+      <Process run={run} scope={scope} setSel={setSel} />
       {frame ? <Frame run={run} frame={frame} act={act} /> : <p className="sub">Framing your thought...</p>}
       <p className="foot sub">Click any box to see its work, mark it stuck, go a level deeper, or redo it.</p>
     </div>
@@ -55,10 +60,7 @@ function Trail({ run, scope, setSel }) {
 
 function Frame({ run, frame, act }) {
   const f = frame.out
-  const corr = Object.fromEntries(run.corrections.map(c => [c.original, c]))
-  const [editing, setEditing] = useState(null)
-  const [text, setText] = useState('')
-  const fix = (original, action, t = '') => { setEditing(null); act('correct', { original, action, text: t, frameId: frame.id }) }
+  const fix = (original, action, text = '') => act('correct', { original, action, text, frameId: frame.id })
   return (
     <div className="frame">
       <h3>Goal <Source s={f.goal.source} /></h3>
@@ -69,27 +71,8 @@ function Frame({ run, frame, act }) {
 
       <h3>I inferred <span className="sub">correct anything wrong; the flow redoes itself</span></h3>
       <ul className="inferred">
-        {[{ text: f.goal.text, why: 'Goal', goal: true }].filter(() => f.goal.source === 'inferred').concat(f.inferred).map((x, i) => {
-          const c = corr[x.text]
-          return (
-            <li key={i} className={c ? 'c-' + c.action : ''}>
-              <div className="inf-text">{x.goal && <b>Goal: </b>}{x.text}{c?.action === 'edit' && <span className="edit-to"> &rarr; {c.text}</span>}</div>
-              <div className="inf-why">{x.why}</div>
-              {editing === i ? (
-                <form className="inf-edit" onSubmit={e => { e.preventDefault(); text.trim() && fix(x.text, 'edit', text) }}>
-                  <input autoFocus value={text} onChange={e => setText(e.target.value)} placeholder="What's actually true?" />
-                  <button className="primary">Save</button><button type="button" className="btn" onClick={() => setEditing(null)}>Cancel</button>
-                </form>
-              ) : !c && (
-                <div className="inf-acts">
-                  <button onClick={() => fix(x.text, 'confirm')}>Right</button>
-                  <button onClick={() => fix(x.text, 'reject')}>Wrong</button>
-                  <button onClick={() => { setEditing(i); setText('') }}>Change</button>
-                </div>
-              )}
-            </li>
-          )
-        })}
+        {[{ text: f.goal.text, why: 'Goal', goal: true }].filter(() => f.goal.source === 'inferred').concat(f.inferred).map((x, i) =>
+          <Fixable key={i} run={run} text={x.text} why={x.why} label={x.goal ? 'Goal: ' : ''} onFix={fix} />)}
       </ul>
 
       {(f.constraints.length > 0 || run.constraints.length > 0) && <>
@@ -110,6 +93,184 @@ function Frame({ run, frame, act }) {
       {f.evidence.length > 0 && <><h3>Evidence</h3><ul className="plain">{f.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul></>}
       <p className="sub conf">Confidence: <b>{f.confidence.level}</b> - {f.confidence.basis}</p>
     </div>
+  )
+}
+
+// One item the system inferred or assumed: mark it right or wrong, or say what is actually true.
+function Fixable({ run, text, why, label, kind, onFix }) {
+  const c = run.corrections.find(x => x.original === text)
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState('')
+  return (
+    <li className={c ? 'c-' + c.action : ''}>
+      <div className="inf-text">{kind && <span className="tag">{kind}</span>}{label && <b>{label}</b>}{text}{c?.action === 'edit' && <span className="edit-to"> &rarr; {c.text}</span>}</div>
+      {why && <div className="inf-why">{why}</div>}
+      {editing ? (
+        <form className="inf-edit" onSubmit={e => { e.preventDefault(); if (val.trim()) { setEditing(false); onFix(text, 'edit', val) } }}>
+          <input autoFocus value={val} onChange={e => setVal(e.target.value)} placeholder="What's actually true?" />
+          <button className="primary">Save</button><button type="button" className="btn" onClick={() => setEditing(false)}>Cancel</button>
+        </form>
+      ) : !c && (
+        <div className="inf-acts">
+          <button onClick={() => onFix(text, 'confirm')}>Right</button>
+          <button onClick={() => onFix(text, 'reject')}>Wrong</button>
+          <button onClick={() => { setEditing(true); setVal('') }}>Change</button>
+        </div>
+      )}
+    </li>
+  )
+}
+
+// Where a point came up, as a jump to that box.
+function placeOf(run, scope, key) {
+  const ns = run.order.map(i => run.nodes[i]).filter(n => n.scope === scope && n.status === 'done')
+  if (key === 'frame') return ns.filter(n => n.kind === 'frame').at(-1)
+  return ns.filter(n => (n.kind === 'method' && n.data.method === key) || (n.kind === 'develop' && n.data.title === key) || n.title === key).at(-1)
+}
+
+const ACTION_LABEL = { ask: 'needs you', research: 'look up', test: 'test it', decide: 'it decides' }
+
+// Everything still open, merged across branches, in the order to settle it. One answer covers every place it came up.
+function OpenPoints({ run, scope, act, setSel }) {
+  // While a pass is being redone, keep showing the last merged list rather than dropping back to the frame's.
+  const conv = latest(run, scope, 'converge') || run.order.map(i => run.nodes[i]).filter(n => n.scope === scope && n.kind === 'converge' && n.out).at(-1)
+  const frame = latest(run, scope, 'frame')
+  const settled = (run.pointAnswers || []).filter(a => (a.scope || 'root') === scope)
+  const [open, setOpen] = useState(null)
+  const [val, setVal] = useState('')
+  let points = conv?.out.open_points
+  if (!points && frame) points = frame.out.unknowns.filter(u => u.action !== 'ignore')
+    .map((u, i) => ({ id: 'u' + i, text: u.text, raised_in: ['frame'], times: 1, action: u.action, rank: i + 1, unlocks: u.why_it_matters }))
+  points = (points || []).filter(p => !settled.some(a => a.point === p.text)).sort((a, b) => a.rank - b.rank)
+  if (!points.length && !settled.length) return null
+  const send = p => { if (!val.trim()) return; act('settle', { point: p.text, text: val, scope }); setOpen(null); setVal('') }
+  return (
+    <div className="points">
+      <h3>Still open <span className="sub">in the order to settle them; one answer covers every place it came up</span></h3>
+      <ol>
+        {points.map((p, i) => (
+          <li key={p.id}>
+            <div className="pt-head"><span className="pt-rank">{i + 1}</span><span className="pt-text">{p.text}</span></div>
+            <div className="pt-meta">
+              {i === 0 && points.length > 1 && <span className="tag">settle first</span>}
+              <span className={'act a-' + p.action}>{ACTION_LABEL[p.action] || p.action}</span>
+              <span className="sub">came up {p.times}&times;:</span>
+              {p.raised_in.map(k => { const n = placeOf(run, scope, k); return n
+                ? <button key={k} className="pt-place" onClick={() => setSel(n.id)}>{k === 'frame' ? 'Frame' : n.title}</button>
+                : <span key={k} className="pt-place off">{k}</span> })}
+            </div>
+            {p.unlocks && <div className="sub">Settles: {p.unlocks}</div>}
+            {open === p.id
+              ? <form className="inf-edit" onSubmit={e => { e.preventDefault(); send(p) }}>
+                  <input autoFocus value={val} onChange={e => setVal(e.target.value)} placeholder="Your answer" />
+                  <button className="primary">Settle</button><button type="button" className="btn" onClick={() => setOpen(null)}>Cancel</button>
+                </form>
+              : <div className="inf-acts"><button onClick={() => { setOpen(p.id); setVal('') }}>Answer this</button></div>}
+          </li>
+        ))}
+      </ol>
+      {settled.length > 0 && <><h3>You settled</h3><ul className="plain">{settled.map((a, i) => <li key={i}><b>{a.point}</b><br />{a.text}</li>)}</ul></>}
+    </div>
+  )
+}
+
+const GATE_LABEL = { commit: 'decide', develop: 'grow the top options', research: 'look things up', more: 'try other angles', ask: 'ask you' }
+
+// The loop laid out: which tools ran in each pass, what came back, who made each call.
+function Process({ run, scope, setSel }) {
+  const ns = run.order.map(i => run.nodes[i]).filter(n => n.scope === scope && n.status !== 'superseded')
+  const convs = ns.filter(n => n.kind === 'converge')
+  if (!convs.length) return null
+  const tools = {}
+  ns.filter(n => n.kind === 'method').forEach(n => { tools[n.title] = (tools[n.title] || 0) + 1 })
+  const written = ns.filter(n => n.status === 'done' && !['capture', 'ask'].includes(n.kind) && !(n.kind === 'route' && n.data.jev?.scored && !n.data.jev.fallback)).length
+  return (
+    <details className="process" open>
+      <summary>How it's thinking</summary>
+      <p className="sub"><b>{modelName(run.model)}</b> wrote {written} step{written === 1 ? '' : 's'}.{run.jev && run.jevStats ? <> <b>Jev</b> made {run.jevStats.calls} routing call{run.jevStats.calls === 1 ? '' : 's'}: picking tools, deciding what next, weighing questions.</> : run.jev ? ' Jev makes the routing calls.' : ''}</p>
+      <div className="tools">{Object.entries(tools).map(([t, k]) => <span key={t} className="tag">{t}{k > 1 ? ` \u00d7${k}` : ''}</span>)}</div>
+      <ol className="passes">
+        {convs.map((c, i) => {
+          const from = c.deps.map(d => run.nodes[d]).filter(Boolean)
+          const you = from.some(n => n.kind === 'ask')
+          const j = c.data.jev
+          return (
+            <li key={c.id}>
+              <span className="ps-n">Pass {i + 1}</span>
+              <div>
+                {you ? <span>Your answers came in</span>
+                  : <>Out to {from.map(n => <button key={n.id} className="pt-place" onClick={() => setSel(n.id)}>{n.title}</button>)}</>}
+                <div className="sub">
+                  &rarr; back together{c.out ? <>, then <b>{GATE_LABEL[c.out.next]}</b>{j?.kind === 'gate' ? ` (${j.decidedBy === 'jev' ? 'Jev' : 'Claude'}'s call)` : ''}</> : ' ...'}
+                </div>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </details>
+  )
+}
+
+// An outer leaf: one option a branch surfaced, and what became of it.
+function LeafDetail({ run, parent, j, setSel }) {
+  const o = leavesOf(parent)[j]
+  if (!o) return null
+  const same = x => x.toLowerCase().trim() === o.title.toLowerCase().trim()
+  const ns = run.order.map(i => run.nodes[i]).filter(n => n.scope === parent.scope && n.status === 'done')
+  const conv = ns.filter(n => n.kind === 'converge').at(-1)
+  const merged = conv?.out.all.find(x => same(x.title))
+  const top = merged && conv.out.top.find(t => t.id === merged.id)
+  const grown = ns.find(n => n.kind === 'develop' && same(n.data.title))
+  return (
+    <div className="pane">
+      <button className="back" onClick={() => setSel(null)}>&larr; Overview</button>
+      <span className="eyebrow">Option</span>
+      <h2 className="node-title">{o.title}</h2>
+      <p>{o.detail}</p>
+      <h3>Where it came from</h3>
+      <p><button className="pt-place" onClick={() => setSel(parent.id)}>{parent.title}</button> <span className="sub">{parent.kind === 'develop' ? 'a variant grown from this direction' : parent.data.focus}</span></p>
+      <h3>What became of it</h3>
+      {grown ? <p>Grown further. <button className="pt-place" onClick={() => setSel(grown.id)}>Open "{grown.title}"</button></p>
+        : top ? <p><span className="tag">top 3</span>{top.why}</p>
+        : merged ? <p className="sub">Considered when the branches came back; not shortlisted.</p>
+        : <p className="sub">Merged into another option or not carried forward.</p>}
+    </div>
+  )
+}
+
+// Eisenhower or impact/effort: the items laid out in their four boxes.
+const QUAD_NAMES = { urgent: [['Do now', 'Schedule'], ['Delegate', 'Drop']], effort: [['Quick wins', 'Big bets'], ['Fill-ins', 'Skip']] }
+function Quadrant({ q }) {
+  const effort = /effort/i.test(q.x)
+  const cols = effort ? [false, true] : [true, false]
+  const names = effort ? QUAD_NAMES.effort : /urgent/i.test(q.x) ? QUAD_NAMES.urgent : null
+  const lab = (axis, h) => effort || !names ? `${h ? 'High' : 'Low'} ${axis.toLowerCase()}` : h ? axis : 'Not ' + axis.toLowerCase()
+  return (
+    <div className="quad">
+      <div className="q-axis-x">{cols.map(h => <span key={'' + h}>{lab(q.x, h)}</span>)}</div>
+      {[true, false].map((yh, r) => (
+        <div className="q-row" key={'' + yh}>
+          <span className="q-axis-y">{lab(q.y, yh)}</span>
+          {cols.map((xh, c) => (
+            <div key={'' + xh} className={'q-cell' + (r === 0 && c === 0 ? ' hot' : '')}>
+              {names && <span className="q-name">{names[r][c]}</span>}
+              <ul>{q.items.filter(i => i.y_high === yh && i.x_high === xh).map((i, k) => <li key={k}><b>{i.text}</b>{i.note && <span className="sub"> {i.note}</span>}</li>)}</ul>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Matrix({ m }) {
+  const rows = [...m.rows].sort((a, b) => b.total - a.total)
+  return (
+    <div className="matrix-wrap"><table className="matrix">
+      <thead><tr><th>Option</th>{m.criteria.map(c => <th key={c.name}>{c.name}<span className="sub"> {Math.round(c.weight * 100)}%</span></th>)}<th>Total</th></tr></thead>
+      <tbody>{rows.map((r, i) => <tr key={r.option} className={i === 0 ? 'best' : ''}><td>{r.option}</td>{r.scores.map((x, k) => <td key={k}>{x}</td>)}<td><b>{Number(r.total.toFixed(2))}</b></td></tr>)}</tbody>
+    </table><p className="sub">Scores aid judgment; options breaking a hard rule were left out, not scored low.</p></div>
   )
 }
 
@@ -242,7 +403,11 @@ function Body({ run, n, act, setSel }) {
     case 'method': return <>
       <p className="sub">Focus: {n.data.focus}</p>
       <p>{o.summary}</p>
-      {o.findings.length > 0 && <><h3>Findings</h3><ul className="findings">{o.findings.map((f, i) => <li key={i} className={'f-' + f.kind}><span className="tag">{f.kind}</span>{f.text}</li>)}</ul></>}
+      {o.quadrant?.items?.length > 0 && <Quadrant q={o.quadrant} />}
+      {o.matrix?.rows?.length > 0 && <Matrix m={o.matrix} />}
+      {o.findings.length > 0 && <><h3>Findings <span className="sub">mark anything wrong; this branch redoes itself</span></h3><ul className="inferred">
+        {o.findings.map((f, i) => <Fixable key={i} run={run} text={f.text} kind={f.kind} onFix={(original, action, text = '') => act('correct', { original, action, text, nodeId: n.id })} />)}
+      </ul></>}
       <List title="Options it surfaced" items={o.options.map(x => <><b>{x.title}</b> - {x.detail}</>)} />
       <List title="Cut" items={o.cuts.map(c => <><b>{c.what}</b> - {c.why}</>)} />
       <List title="Risks" items={o.risks} />
