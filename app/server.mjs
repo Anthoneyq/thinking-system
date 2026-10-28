@@ -1251,6 +1251,7 @@ async function answer(run2, { nodeId, answers = [], skip = false, asIs = false }
   const all = [...n.data.unclear?.first || [], ...given];
   n.out = { answers: all, skipped: skip || !all.length };
   n.status = "done";
+  n.endedAt = (/* @__PURE__ */ new Date()).toISOString();
   n.out.summary = n.out.skipped ? "You said: decide yourself" : `${n.out.answers.length} answer(s)`;
   log(run2, "Your input: " + n.out.summary);
   after(run2, n, effortOf(run2, n.scope), {});

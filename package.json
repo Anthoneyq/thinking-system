@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build && vite build -c vite.server.config.js",
     "start": "node app/server.mjs",
-    "app": "npm run build && node app/server.mjs"
+    "app": "npm run build && node app/server.mjs",
+    "demo": "VITE_REPLAY=1 vite build"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.4",

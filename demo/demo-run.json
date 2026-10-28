@@ -1,0 +1,2115 @@
+{
+  "id": "2026-10-28-i-m-a-freelance-designer-oa5b",
+  "title": "Finish rebrand, then test the contract",
+  "input": "I'm a freelance designer and this month is a mess. A client wants a full rebrand by the 20th. Two old clients owe me invoices. I keep meaning to raise my rates, and my portfolio site is three years old. Someone offered me a part-time agency contract that pays steady but would eat two days a week. I also want to learn motion design. What do I do first, what waits, and should I take the agency contract?",
+  "model": "claude-sonnet-5-5",
+  "effort": "normal",
+  "handsOff": false,
+  "createdAt": "2026-10-28T20:58:49.115Z",
+  "status": "done",
+  "jev": true,
+  "seq": 14,
+  "nodes": {
+    "n1": {
+      "id": "n1",
+      "kind": "capture",
+      "scope": "root",
+      "title": "Your thought",
+      "deps": [],
+      "data": {},
+      "status": "done",
+      "out": {
+        "text": "I'm a freelance designer and this month is a mess. A client wants a full rebrand by the 20th. Two old clients owe me invoices. I keep meaning to raise my rates, and my portfolio site is three years old. Someone offered me a part-time agency contract that pays steady but would eat two days a week. I also want to learn motion design. What do I do first, what waits, and should I take the agency contract?"
+      },
+      "error": null,
+      "createdAt": "2026-10-28T20:58:49.115Z"
+    },
+    "n2": {
+      "id": "n2",
+      "kind": "frame",
+      "scope": "root",
+      "title": "Frame it",
+      "deps": [
+        "n1"
+      ],
+      "data": {
+        "jev": {
+          "kind": "questions",
+          "ms": 248,
+          "dropped": []
+        }
+      },
+      "status": "done",
+      "out": {
+        "title": "Sort a crowded freelance month",
+        "summary": "One hard deadline (rebrand by the 20th), money owed, three slow goals (rates, portfolio, motion), and one big decision (agency contract, two days a week). First moves look like the rebrand and chasing the invoices. The contract decision depends on cash runway, contract terms, and how much rebrand work is left. Rates, portfolio and motion can wait, but a rate rise for new work costs nothing to start.",
+        "question": "What should I do first this month, what can wait, and should I take the agency contract?",
+        "goal": {
+          "text": "Get through this month in order: deliver the rebrand, collect owed money, sequence rates, portfolio and motion learning, and decide on the agency contract.",
+          "source": "inferred"
+        },
+        "stated": [
+          "Freelance designer; this month is a mess.",
+          "A client wants a full rebrand by the 20th.",
+          "Two old clients owe me invoices.",
+          "I keep meaning to raise my rates.",
+          "My portfolio site is three years old.",
+          "Someone offered a part-time agency contract: steady pay, would eat two days a week.",
+          "I want to learn motion design.",
+          "Asked: what first, what waits, and should I take the contract?"
+        ],
+        "inferred": [
+          {
+            "text": "The rebrand is the top priority.",
+            "why": "It is the only item with a fixed date and likely the largest near-term income."
+          },
+          {
+            "text": "Cash flow may be tight.",
+            "why": "They mention unpaid invoices and stress 'steady' pay. Not confirmed."
+          },
+          {
+            "text": "The 20th is probably Nov 20, so the deadline is about three weeks away.",
+            "why": "Today is Oct 28 and the user said 'this month'. Ambiguous."
+          },
+          {
+            "text": "The contract and motion learning compete for the same hours, unless the agency does motion work.",
+            "why": "Both use limited time; the agency's work type is unknown."
+          },
+          {
+            "text": "A rate rise is cheapest to apply to new clients and new quotes.",
+            "why": "It needs no negotiation with existing clients and can start now."
+          }
+        ],
+        "constraints": [
+          {
+            "text": "Rebrand due on the 20th.",
+            "source": "stated",
+            "hard": true
+          },
+          {
+            "text": "The contract would take about two days a week.",
+            "source": "stated",
+            "hard": true
+          },
+          {
+            "text": "Time is limited; not everything fits this month.",
+            "source": "inferred",
+            "hard": true
+          },
+          {
+            "text": "Income must cover living costs. The amount needed is unknown.",
+            "source": "inferred",
+            "hard": false
+          }
+        ],
+        "evidence": [
+          "User states the rebrand deadline, two unpaid invoices, a three-year-old portfolio, and a two-day-a-week contract offer.",
+          "No figures were given: invoice amounts, rebrand fee, contract pay, current rates, savings."
+        ],
+        "unknowns": [
+          {
+            "text": "Contract pay, length, start date, and whether it is exclusive or can be ended.",
+            "why_it_matters": "Decides whether it is a safe base or a trap on your time.",
+            "action": "ask",
+            "how": "Ask the user, then ask the agency for terms in writing."
+          },
+          {
+            "text": "Cash runway and monthly income needed.",
+            "why_it_matters": "If runway is short, steady pay weighs heavily. If not, you can decline or negotiate.",
+            "action": "ask",
+            "how": "Ask the user for months of savings and monthly costs."
+          },
+          {
+            "text": "Amounts and age of the two unpaid invoices, and what the contracts say about late payment.",
+            "why_it_matters": "Collecting them may ease cash pressure and change the contract decision.",
+            "action": "ask",
+            "how": "Ask the user."
+          },
+          {
+            "text": "How much of the rebrand is done and how many hours remain.",
+            "why_it_matters": "Sets how much time is free before the 20th and whether the contract start can wait.",
+            "action": "ask",
+            "how": "Ask the user."
+          },
+          {
+            "text": "Whether the agency does motion work.",
+            "why_it_matters": "Could turn the contract into paid motion learning.",
+            "action": "ask",
+            "how": "Ask the agency."
+          },
+          {
+            "text": "Whether rate rises can be applied to the rebrand client or only to new work.",
+            "why_it_matters": "Affects when higher income begins.",
+            "action": "decide",
+            "how": "Default to new quotes only, starting now."
+          }
+        ],
+        "lenses": [
+          "Freelance cash flow and runway",
+          "Time and priority sequencing",
+          "Pricing and positioning",
+          "Risk and reversibility of the contract",
+          "Skill development and career direction",
+          "Client relationships and collections"
+        ],
+        "confidence": {
+          "level": "medium",
+          "basis": "The sequencing of the rebrand and invoices follows from the stated deadline and owed money. The contract advice depends on figures the user has not given."
+        },
+        "questions": [
+          {
+            "id": "q1",
+            "q": "How many months of living costs could you cover if no new money came in?",
+            "why": "This is the main driver of whether steady contract pay is needed.",
+            "options": [
+              "Under 1 month",
+              "1-3 months",
+              "3+ months"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.91,
+              "blocks": 0.38
+            }
+          },
+          {
+            "id": "q2",
+            "q": "What are the contract's pay, length, and can you end it early?",
+            "why": "A short, flexible, well-paid contract is easy to accept. A long, rigid one needs scrutiny.",
+            "options": [
+              "I don't know yet",
+              "Fixed term",
+              "Open-ended"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.92,
+              "blocks": 0.47
+            }
+          },
+          {
+            "id": "q3",
+            "q": "How much of the rebrand is done, and how many hours are left?",
+            "why": "Decides whether you can start the contract before the 20th.",
+            "options": [
+              "Not started",
+              "About half",
+              "Nearly done"
+            ],
+            "blocking": true,
+            "jev": {
+              "changes": 0.92,
+              "blocks": 0.44
+            }
+          },
+          {
+            "id": "q4",
+            "q": "How overdue are the two invoices, and how large are they next to your monthly costs?",
+            "why": "Large overdue sums may remove the need for the contract.",
+            "options": [
+              "Small, recently due",
+              "Large, recently due",
+              "Long overdue"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.89,
+              "blocks": 0.22
+            }
+          },
+          {
+            "id": "q5",
+            "q": "Does the agency do motion work you could join?",
+            "why": "It could combine income with the skill you want.",
+            "options": [
+              "Yes",
+              "No",
+              "Not sure"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.75,
+              "blocks": 0.13
+            }
+          }
+        ]
+      },
+      "error": null,
+      "createdAt": "2026-10-28T20:58:49.115Z",
+      "startedAt": "2026-10-28T20:58:49.115Z",
+      "endedAt": "2026-10-28T20:59:24.041Z"
+    },
+    "n3": {
+      "id": "n3",
+      "kind": "ask",
+      "scope": "root",
+      "title": "Your input",
+      "deps": [
+        "n2"
+      ],
+      "data": {
+        "from": "frame",
+        "questions": [
+          {
+            "id": "q1",
+            "q": "How many months of living costs could you cover if no new money came in?",
+            "why": "This is the main driver of whether steady contract pay is needed.",
+            "options": [
+              "Under 1 month",
+              "1-3 months",
+              "3+ months"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.91,
+              "blocks": 0.38
+            }
+          },
+          {
+            "id": "q2",
+            "q": "What are the contract's pay, length, and can you end it early?",
+            "why": "A short, flexible, well-paid contract is easy to accept. A long, rigid one needs scrutiny.",
+            "options": [
+              "I don't know yet",
+              "Fixed term",
+              "Open-ended"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.92,
+              "blocks": 0.47
+            }
+          },
+          {
+            "id": "q3",
+            "q": "How much of the rebrand is done, and how many hours are left?",
+            "why": "Decides whether you can start the contract before the 20th.",
+            "options": [
+              "Not started",
+              "About half",
+              "Nearly done"
+            ],
+            "blocking": true,
+            "jev": {
+              "changes": 0.92,
+              "blocks": 0.44
+            }
+          },
+          {
+            "id": "q4",
+            "q": "How overdue are the two invoices, and how large are they next to your monthly costs?",
+            "why": "Large overdue sums may remove the need for the contract.",
+            "options": [
+              "Small, recently due",
+              "Large, recently due",
+              "Long overdue"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.89,
+              "blocks": 0.22
+            }
+          },
+          {
+            "id": "q5",
+            "q": "Does the agency do motion work you could join?",
+            "why": "It could combine income with the skill you want.",
+            "options": [
+              "Yes",
+              "No",
+              "Not sure"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.75,
+              "blocks": 0.13
+            }
+          }
+        ],
+        "checked": true,
+        "unclear": {
+          "questions": [
+            "Does the agency do motion work you could join?"
+          ],
+          "first": [
+            {
+              "q": "How many months of living costs could you cover if no new money came in?",
+              "a": "1-3 months"
+            },
+            {
+              "q": "What are the contract's pay, length, and can you end it early?",
+              "a": "Six-month fixed term, 30 days notice to end it, steady but below my day rate"
+            },
+            {
+              "q": "How much of the rebrand is done, and how many hours are left?",
+              "a": "About half; maybe 25 hours left"
+            },
+            {
+              "q": "How overdue are the two invoices, and how large are they next to your monthly costs?",
+              "a": "Long overdue, together about one month of costs"
+            },
+            {
+              "q": "Does the agency do motion work you could join?",
+              "a": "Not sure"
+            }
+          ]
+        }
+      },
+      "status": "done",
+      "out": {
+        "answers": [
+          {
+            "q": "How many months of living costs could you cover if no new money came in?",
+            "a": "1-3 months"
+          },
+          {
+            "q": "What are the contract's pay, length, and can you end it early?",
+            "a": "Six-month fixed term, 30 days notice to end it, steady but below my day rate"
+          },
+          {
+            "q": "How much of the rebrand is done, and how many hours are left?",
+            "a": "About half; maybe 25 hours left"
+          },
+          {
+            "q": "How overdue are the two invoices, and how large are they next to your monthly costs?",
+            "a": "Long overdue, together about one month of costs"
+          },
+          {
+            "q": "Does the agency do motion work you could join?",
+            "a": "Not sure"
+          },
+          {
+            "q": "Does the agency do motion work you could join?",
+            "a": "I don't know, I can ask them this week"
+          }
+        ],
+        "skipped": false,
+        "summary": "6 answer(s)"
+      },
+      "error": null,
+      "createdAt": "2026-10-28T20:59:24.041Z"
+    },
+    "n4": {
+      "id": "n4",
+      "kind": "frame",
+      "scope": "root",
+      "title": "Reframe",
+      "deps": [
+        "n3"
+      ],
+      "data": {},
+      "status": "done",
+      "out": {
+        "title": "Sequencing a crowded freelance month",
+        "summary": "You have a hard rebrand deadline, thin cash (1-3 months), and about one month of costs tied up in overdue invoices. The rebrand has about 25 hours left, so it fits. Collecting the invoices is the fastest cash lever. The agency contract is steady but pays below your day rate and takes two days a week for six months, with a 30-day exit. Rates, portfolio and motion learning are not urgent and can wait until the rebrand ships.",
+        "question": "What should I do first this month, what can wait, and should I take the agency contract?",
+        "goal": {
+          "text": "Get through this month in order: deliver the rebrand, collect owed money, sequence rates, portfolio and motion learning, and decide on the agency contract.",
+          "source": "inferred"
+        },
+        "stated": [
+          "Freelance designer; this month is a mess.",
+          "A client wants a full rebrand by the 20th.",
+          "Two old clients owe me invoices; long overdue, together about one month of costs.",
+          "Rebrand is about half done, about 25 hours left.",
+          "I keep meaning to raise my rates.",
+          "Portfolio site is three years old.",
+          "Agency offered a part-time contract: six-month fixed term, 30 days notice to end, steady but below my day rate, about two days a week.",
+          "I want to learn motion design.",
+          "Cash runway is 1-3 months with no new money.",
+          "I don't know if the agency does motion work; I can ask this week."
+        ],
+        "inferred": [
+          {
+            "text": "The rebrand is the top priority.",
+            "why": "It has a hard date and is paid work already half done."
+          },
+          {
+            "text": "The 20th is Nov 20, about three weeks away.",
+            "why": "Today is Oct 28 and the user said 'this month'. The exact date is not stated."
+          },
+          {
+            "text": "Collecting the two invoices is the second priority.",
+            "why": "They equal about a month of costs and runway is short."
+          },
+          {
+            "text": "The contract and motion learning compete for the same hours unless the agency does motion work.",
+            "why": "The contract takes two days a week and no spare time was mentioned."
+          },
+          {
+            "text": "A rate rise is cheapest to apply to new quotes, not the current rebrand.",
+            "why": "The rebrand is already agreed and half done."
+          }
+        ],
+        "constraints": [
+          {
+            "text": "Rebrand due on the 20th.",
+            "source": "stated",
+            "hard": true
+          },
+          {
+            "text": "The contract would take about two days a week.",
+            "source": "stated",
+            "hard": true
+          },
+          {
+            "text": "Time is limited; not everything fits this month.",
+            "source": "inferred",
+            "hard": true
+          },
+          {
+            "text": "Cash runway is only 1-3 months, so income must keep coming.",
+            "source": "stated",
+            "hard": true
+          },
+          {
+            "text": "Contract can be ended with 30 days notice after a six-month fixed term start.",
+            "source": "stated",
+            "hard": false
+          }
+        ],
+        "evidence": [
+          "User said about 25 hours of rebrand work remain.",
+          "User said invoices are long overdue and total about one month of costs.",
+          "User said the contract pays below their day rate but is steady, with 30 days notice.",
+          "User said runway is 1-3 months."
+        ],
+        "unknowns": [
+          {
+            "text": "Whether the agency does motion work you could join.",
+            "why_it_matters": "If yes, the contract could double as motion learning and tip the decision toward taking it.",
+            "action": "ask",
+            "how": "Ask the agency this week."
+          },
+          {
+            "text": "Exact contract pay and start date.",
+            "why_it_matters": "Pay below day rate matters less if it fills a cash gap, but the start date decides whether it collides with the rebrand.",
+            "action": "ask",
+            "how": "Ask the agency for the rate and a start date after the 20th."
+          },
+          {
+            "text": "Exact invoice amounts, ages and late-payment terms.",
+            "why_it_matters": "Determines how firmly you can chase and whether late fees apply.",
+            "action": "research",
+            "how": "Check the original contracts and invoices."
+          },
+          {
+            "text": "Monthly income needed to cover costs.",
+            "why_it_matters": "Decides how much the contract's steady pay is worth.",
+            "action": "decide",
+            "how": "Add up fixed monthly costs yourself."
+          },
+          {
+            "text": "Whether the rebrand client has more work lined up.",
+            "why_it_matters": "Affects how much steady income the contract needs to replace.",
+            "action": "ask",
+            "how": "Ask the client after delivery."
+          }
+        ],
+        "lenses": [
+          "Freelance cash flow",
+          "Time and capacity planning",
+          "Risk and reversibility",
+          "Pricing and positioning",
+          "Skill development"
+        ],
+        "confidence": {
+          "level": "medium",
+          "basis": "Based on the user's stated figures for hours, runway and invoices. Contract pay, start date and the agency's motion work are still unknown."
+        },
+        "questions": []
+      },
+      "error": null,
+      "createdAt": "2026-10-28T20:59:54.462Z",
+      "startedAt": "2026-10-28T20:59:54.462Z",
+      "endedAt": "2026-10-28T21:00:18.176Z"
+    },
+    "n5": {
+      "id": "n5",
+      "kind": "route",
+      "scope": "root",
+      "title": "Pick methods",
+      "deps": [
+        "n4"
+      ],
+      "data": {
+        "jev": {
+          "kind": "route",
+          "ms": 215,
+          "simple": false,
+          "scored": [
+            {
+              "id": "eisenhower",
+              "p": 0.94,
+              "lead": 1
+            },
+            {
+              "id": "opportunity-cost",
+              "p": 0.92,
+              "lead": 0
+            },
+            {
+              "id": "second-order",
+              "p": 0.91,
+              "lead": 0
+            },
+            {
+              "id": "impact-effort",
+              "p": 0.91,
+              "lead": 0
+            },
+            {
+              "id": "issue-tree",
+              "p": 0.87,
+              "lead": 0
+            },
+            {
+              "id": "value-of-info",
+              "p": 0.87,
+              "lead": 0
+            },
+            {
+              "id": "small-test",
+              "p": 0.86,
+              "lead": 0
+            },
+            {
+              "id": "reversibility",
+              "p": 0.85,
+              "lead": 0
+            }
+          ]
+        }
+      },
+      "status": "done",
+      "out": {
+        "summary": "Jev picked 4 methods in 0.2s.",
+        "simple": false,
+        "plan": [
+          {
+            "method": "eisenhower",
+            "focus": "What should I do first this month, what can wait, and should I take the agency contract?",
+            "why": "Jev: 94% likely to help",
+            "checks": []
+          },
+          {
+            "method": "opportunity-cost",
+            "focus": "What should I do first this month, what can wait, and should I take the agency contract?",
+            "why": "Jev: 92% likely to help",
+            "checks": []
+          },
+          {
+            "method": "second-order",
+            "focus": "What should I do first this month, what can wait, and should I take the agency contract?",
+            "why": "Jev: 91% likely to help",
+            "checks": []
+          },
+          {
+            "method": "impact-effort",
+            "focus": "What should I do first this month, what can wait, and should I take the agency contract?",
+            "why": "Jev: 91% likely to help",
+            "checks": []
+          }
+        ]
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:00:18.176Z",
+      "startedAt": "2026-10-28T21:00:18.176Z",
+      "endedAt": "2026-10-28T21:00:18.392Z"
+    },
+    "n6": {
+      "id": "n6",
+      "kind": "method",
+      "scope": "root",
+      "title": "Urgent / important",
+      "deps": [
+        "n5"
+      ],
+      "data": {
+        "method": "eisenhower",
+        "name": "Urgent / important",
+        "how": "Sort items into do now, schedule, delegate or automate, drop. Importance means it moves the stated goal.",
+        "focus": "What should I do first this month, what can wait, and should I take the agency contract?",
+        "why": "Jev: 94% likely to help",
+        "checks": [],
+        "ring": 1
+      },
+      "status": "done",
+      "out": {
+        "summary": "Do now: finish the rebrand (about 25 hours) and chase the two overdue invoices. Schedule: ask the agency about motion work this week, then decide on the contract. Wait: rate rise (apply to new quotes only), portfolio, motion learning. Lean toward taking the contract only after the rebrand ships, since runway is 1-3 months and the invoices are about one month of costs. Answer hinges on start date and pay.",
+        "findings": [
+          {
+            "kind": "evidence",
+            "text": "Rebrand is due on the 20th, about half done, about 25 hours left. It is both urgent and important."
+          },
+          {
+            "kind": "evidence",
+            "text": "Two old invoices are long overdue and together equal about one month of costs. Collecting them is cheap next to the cash it recovers."
+          },
+          {
+            "kind": "evidence",
+            "text": "Runway is 1-3 months. Income must keep coming, so steady money has real weight."
+          },
+          {
+            "kind": "evidence",
+            "text": "Contract: six months fixed, 30 days notice, steady but below your day rate, about two days a week."
+          },
+          {
+            "kind": "inference",
+            "text": "25 hours is roughly 3-4 working days. It fits in three weeks even with the other tasks, if protected."
+          },
+          {
+            "kind": "inference",
+            "text": "The contract is important but not urgent until a start date is known. The decision can wait a few days for the agency's answer."
+          },
+          {
+            "kind": "inference",
+            "text": "Recovering the invoices would extend runway by about a month, which lowers the pressure to accept a below-rate contract."
+          },
+          {
+            "kind": "inference",
+            "text": "Rate rise, portfolio and motion learning are important but not urgent. None must happen this month."
+          },
+          {
+            "kind": "assumption",
+            "text": "The contract has not yet got a fixed start date, so it can begin after the 20th."
+          },
+          {
+            "kind": "assumption",
+            "text": "Contract pay covers a meaningful share of monthly costs; amount not given."
+          }
+        ],
+        "options": [
+          {
+            "title": "Rebrand and invoices first, decide contract after the 20th",
+            "detail": "Block 25 hours for the rebrand. Send firm payment reminders this week. Ask the agency about motion and start date. Negotiate a start after the 20th."
+          },
+          {
+            "title": "Take the contract now",
+            "detail": "Gives steady income, but two days a week drops out of the rebrand window. Risks the hard deadline."
+          },
+          {
+            "title": "Decline the contract",
+            "detail": "Keeps full time for freelance and rate rise. Risky with 1-3 months runway unless the invoices are paid and new work is lined up."
+          },
+          {
+            "title": "Counter-offer",
+            "detail": "Ask for one or two days a week, a higher rate, or motion work included. Cheap to try and reversible."
+          }
+        ],
+        "cuts": [
+          {
+            "what": "Portfolio redesign this month",
+            "why": "Not urgent. Do it after the rebrand ships; the finished rebrand may become a new case study."
+          },
+          {
+            "what": "Raising rates on the current rebrand",
+            "why": "Changing price mid-project harms the relationship. Apply to new quotes only."
+          },
+          {
+            "what": "Starting motion design learning now",
+            "why": "Competes for hours with the deadline. Revisit once you know if the agency does motion work."
+          }
+        ],
+        "risks": [
+          "Rebrand slips past the 20th if the contract starts early or the invoice chasing eats time.",
+          "Invoices stay unpaid, leaving runway at 1-3 months.",
+          "Contract rate below your day rate may anchor you low and block the rate rise.",
+          "Two fixed days a week leave less time to find new freelance clients; 30 days notice only helps if the term allows early exit.",
+          "Declining may leave a gap in income if no new client work follows the rebrand."
+        ],
+        "unknowns": [
+          "Does the agency do motion work you could join? (you can ask this week)",
+          "Exact contract pay and start date.",
+          "Exact invoice amounts, ages and late-payment terms.",
+          "Whether the rebrand client has more work lined up.",
+          "Monthly income you need to cover costs.",
+          "Whether the 30 days notice can be used during the six-month fixed term."
+        ],
+        "quadrant": {
+          "x": "Urgent",
+          "y": "Important",
+          "items": [
+            {
+              "text": "Finish the rebrand by the 20th",
+              "x_high": true,
+              "y_high": true,
+              "note": "Do now. Block the 25 hours on your calendar first."
+            },
+            {
+              "text": "Collect the two overdue invoices",
+              "x_high": true,
+              "y_high": true,
+              "note": "Do now. Send firm reminders this week, cite terms and a pay-by date."
+            },
+            {
+              "text": "Decide on the agency contract",
+              "x_high": false,
+              "y_high": true,
+              "note": "Schedule. Decide after the agency replies; try for a start after the 20th."
+            },
+            {
+              "text": "Ask the agency if they do motion work",
+              "x_high": true,
+              "y_high": true,
+              "note": "Do now. One short message this week; it shapes the contract decision."
+            },
+            {
+              "text": "Raise my rates",
+              "x_high": false,
+              "y_high": true,
+              "note": "Schedule. Apply to new quotes after the rebrand ships."
+            },
+            {
+              "text": "Update the three-year-old portfolio site",
+              "x_high": false,
+              "y_high": true,
+              "note": "Schedule for December. Use the finished rebrand as a case study."
+            },
+            {
+              "text": "Learn motion design",
+              "x_high": false,
+              "y_high": false,
+              "note": "Wait. Revisit once the agency answer is known."
+            }
+          ]
+        },
+        "matrix": {
+          "criteria": [],
+          "rows": []
+        }
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:00:18.392Z",
+      "startedAt": "2026-10-28T21:00:18.392Z",
+      "endedAt": "2026-10-28T21:00:33.079Z"
+    },
+    "n7": {
+      "id": "n7",
+      "kind": "method",
+      "scope": "root",
+      "title": "Opportunity cost",
+      "deps": [
+        "n5"
+      ],
+      "data": {
+        "method": "opportunity-cost",
+        "name": "Opportunity cost",
+        "how": "Name what this displaces: the current work it delays, the attention it takes, the upkeep it adds. Keep the existing tool or plan unless the gain clearly beats the switching cost.",
+        "focus": "What should I do first this month, what can wait, and should I take the agency contract?",
+        "why": "Jev: 92% likely to help",
+        "checks": [],
+        "ring": 1
+      },
+      "status": "done",
+      "out": {
+        "summary": "Opportunity cost view: the rebrand (25 hours, hard deadline) and the overdue invoices come first because they are the cheapest money and the biggest loss if missed. The agency contract's real cost is two days a week of your day rate, but with a 1-3 month runway, steady income likely beats the gap. Don't decide yet: ask about motion work and start date this week, then negotiate a start after the 20th. Rates, portfolio and motion learning wait.",
+        "findings": [
+          {
+            "kind": "evidence",
+            "text": "Rebrand is about half done with about 25 hours left, due on the 20th. You stated this."
+          },
+          {
+            "kind": "evidence",
+            "text": "Two old invoices, together about one month of costs, are long overdue. Runway is 1-3 months. Collecting them could add up to a third to a whole extra month of runway."
+          },
+          {
+            "kind": "evidence",
+            "text": "Contract: six-month fixed term, 30 days notice, pay steady but below your day rate, about two days a week."
+          },
+          {
+            "kind": "inference",
+            "text": "25 hours is about 3-4 working days. The rebrand fits in three weeks even with the contract, but only if the contract starts after the 20th or you cap other work."
+          },
+          {
+            "kind": "inference",
+            "text": "The contract displaces about 40% of your week. The cost is the gap between your day rate and its rate, plus the freelance work and new-client search you can't do in those days."
+          },
+          {
+            "kind": "inference",
+            "text": "Chasing invoices costs a few hours and returns a month of costs. It is the highest return per hour on your list."
+          },
+          {
+            "kind": "inference",
+            "text": "Raising rates costs almost nothing if applied to new quotes. Applying it to the current rebrand risks the deadline relationship for little gain."
+          },
+          {
+            "kind": "inference",
+            "text": "Motion learning and a portfolio refresh both need focused hours. The contract competes with them unless the agency does motion work, which would turn the contract into paid learning."
+          },
+          {
+            "kind": "assumption",
+            "text": "The contract pay covers your monthly costs together with the other three days of freelance income. Not confirmed."
+          },
+          {
+            "kind": "assumption",
+            "text": "The 30-day notice applies after the term starts, so exit is possible but not free. Unclear if early exit is allowed within the six months."
+          }
+        ],
+        "options": [
+          {
+            "title": "A. Rebrand and invoices first, take the contract starting after the 20th",
+            "detail": "Finish the 25 hours, chase both invoices this week, ask the agency about motion work and a start date. Sign if the pay covers costs and start is after the 20th. Lowest risk to cash and deadline. Costs: lower income per day and less time for rates, portfolio, and motion."
+          },
+          {
+            "title": "B. Decline the contract, stay fully freelance",
+            "detail": "Keeps all days for rebrand, rate rise, portfolio and motion. Cost: income stays lumpy with 1-3 months runway. Only sensible if invoices are collected and pipeline is full. Pipeline is unknown."
+          },
+          {
+            "title": "C. Take the contract now, start immediately",
+            "detail": "Fastest steady income. Cost: squeezes the rebrand into three days a week, raises deadline risk, and the rebrand is your main current income."
+          },
+          {
+            "title": "D. Counter-offer: fewer days or a higher rate",
+            "detail": "Ask for one or one and a half days or a rate nearer your day rate. Cheap to try. Cost: the offer could be withdrawn. Decide your floor first."
+          }
+        ],
+        "cuts": [
+          {
+            "what": "Learning motion design this month",
+            "why": "It earns nothing now and needs focused hours. Revisit once you know if the agency does motion work."
+          },
+          {
+            "what": "Full portfolio rebuild",
+            "why": "Three years old, but not urgent. Swap in the new rebrand as one case study after delivery if the client agrees."
+          },
+          {
+            "what": "Raising rates on the current rebrand",
+            "why": "Switching cost is a risk to the deadline and the relationship. Apply the new rate to every new quote instead."
+          },
+          {
+            "what": "Deciding on the contract before the answers arrive",
+            "why": "Motion work, pay and start date are all askable this week. Deciding blind costs more than waiting a few days."
+          }
+        ],
+        "risks": [
+          "Rebrand overruns while you chase invoices and negotiate. Block the 25 hours first.",
+          "Invoices stay unpaid. Late fees or a final notice may be needed.",
+          "A six-month contract below your day rate may anchor you at a lower rate and block your rate rise.",
+          "Two days a week may leave too little time to find new freelance clients, so income depends on one source.",
+          "Runway is short. A missed rebrand payment or a delayed start leaves little cushion."
+        ],
+        "unknowns": [
+          "Exact contract pay and start date.",
+          "Whether the agency does motion work you could join. You can ask this week.",
+          "Whether the contract allows early exit inside the six months, or only 30 days notice.",
+          "Exact invoice amounts, ages, and any late-payment terms in the agreements.",
+          "Whether the rebrand client has more work lined up.",
+          "Whether the agency allows outside freelance work or sets days and hours that conflict with other clients."
+        ],
+        "quadrant": {
+          "x": "",
+          "y": "",
+          "items": []
+        },
+        "matrix": {
+          "criteria": [],
+          "rows": []
+        }
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:00:18.392Z",
+      "startedAt": "2026-10-28T21:00:18.394Z",
+      "endedAt": "2026-10-28T21:00:35.542Z"
+    },
+    "n8": {
+      "id": "n8",
+      "kind": "method",
+      "scope": "root",
+      "title": "Second-order effects",
+      "deps": [
+        "n5"
+      ],
+      "data": {
+        "method": "second-order",
+        "name": "Second-order effects",
+        "how": "For each leading option, ask \"and then what?\" two or three steps out. Note effects on time, money, people, reputation.",
+        "focus": "What should I do first this month, what can wait, and should I take the agency contract?",
+        "why": "Jev: 91% likely to help",
+        "checks": [],
+        "ring": 1
+      },
+      "status": "done",
+      "out": {
+        "summary": "Second-order view: finish the rebrand first, chase the two invoices this week, and treat the agency contract as likely yes but only after you ask about start date, pay and motion work. The contract's steady pay fixes your thin runway. Its cost is two days a week, which squeezes the rate rise, the portfolio and motion learning. Those can wait and mostly cannot be done in parallel.",
+        "findings": [
+          {
+            "kind": "evidence",
+            "text": "You stated runway is 1-3 months, the invoices total about one month of costs, and the rebrand has about 25 hours left."
+          },
+          {
+            "kind": "evidence",
+            "text": "You stated the contract is six months fixed, 30 days notice, steady, below your day rate, about two days a week."
+          },
+          {
+            "kind": "inference",
+            "text": "Rebrand first: missing the 20th risks the payment, a referral source and a reference. Those losses would hit the weakest cash position you have. 25 hours is about 3-4 working days, so it fits if protected."
+          },
+          {
+            "kind": "inference",
+            "text": "Chasing the invoices is cheap (an hour or two) and could add a month of runway. If paid, the contract becomes a choice rather than a need. If ignored, the cash gap stays and pushes you to accept worse terms."
+          },
+          {
+            "kind": "inference",
+            "text": "Taking the contract: money steadies, then two days a week are gone. Remaining capacity is about three days. New client work shrinks, so your income depends on the lower contract rate more than you may want."
+          },
+          {
+            "kind": "inference",
+            "text": "Declining the contract: you keep full capacity for higher-rate work, but with 1-3 months runway, one slow month forces a worse decision later. Reversing is hard because the offer may not return."
+          },
+          {
+            "kind": "inference",
+            "text": "A rate rise has a second-order cost under the contract: with fewer open days, you can afford to lose small clients over price. So the contract makes the rate rise safer for new quotes."
+          },
+          {
+            "kind": "inference",
+            "text": "Portfolio work done now gets little use if you are about to be busy. Done during the contract, it feeds higher-rate work later. Order matters less than doing it once."
+          },
+          {
+            "kind": "inference",
+            "text": "If the agency does motion work, the contract may also pay you to learn. If not, motion learning competes for the same hours and slips to later."
+          },
+          {
+            "kind": "assumption",
+            "text": "The contract pay still covers your monthly costs together with some freelance income. This is untested."
+          },
+          {
+            "kind": "assumption",
+            "text": "The rebrand client pays on time. The old invoices suggest late payment is possible in your client base."
+          }
+        ],
+        "options": [
+          {
+            "title": "A: Rebrand, invoices, then sign with conditions",
+            "detail": "Finish rebrand by the 20th. Send firm payment reminders this week. Ask the agency about motion work, pay, start date. Ask for a start after the 20th. Then sign. Cost: less capacity. Gain: steady income and a rate rise on new quotes."
+          },
+          {
+            "title": "B: Decline the contract, go all-in freelance",
+            "detail": "Full capacity for rebrand, portfolio, rate rise and motion. Cost: runway risk if invoices stay unpaid or the pipeline is thin. Hard to reverse if the offer closes."
+          },
+          {
+            "title": "C: Negotiate a lighter deal",
+            "detail": "Ask for 1-1.5 days a week or a shorter term. Keeps part of the safety and more free days. Risk: they say no and cool on you. Low cost to ask."
+          },
+          {
+            "title": "D: Take it now, start immediately",
+            "detail": "Fastest income. But it collides with the rebrand's 25 hours and risks the deadline. The second-order damage is highest here."
+          }
+        ],
+        "cuts": [
+          {
+            "what": "Portfolio rebuild this month",
+            "why": "It pays nothing before the 20th and competes with the rebrand. A short list of 2-3 case studies later is enough."
+          },
+          {
+            "what": "Motion design learning this month",
+            "why": "Hours are fully booked. Revisit once you know whether the agency does motion work."
+          },
+          {
+            "what": "Applying a rate rise to the current rebrand",
+            "why": "It risks the client relationship mid-project. Apply it to new quotes only."
+          },
+          {
+            "what": "Deciding the contract before asking the agency questions",
+            "why": "One email this week can change the answer. Deciding blind is the costly path."
+          }
+        ],
+        "risks": [
+          "The rebrand overruns the 25-hour estimate and the 20th is missed, which hurts cash and reputation at once.",
+          "The invoices stay unpaid, so the contract becomes forced rather than chosen.",
+          "Contract starts before the 20th and cuts rebrand time.",
+          "Six months at below-day-rate pay anchors your income and delays the rate rise.",
+          "Agency work uses your best energy and leaves little for finding better clients.",
+          "Pushing the old clients hard may end those relationships. Likely a small loss if they already ignore invoices."
+        ],
+        "unknowns": [
+          "Does the agency do motion work you could join? (you can ask this week)",
+          "Exact contract day rate and start date, and whether it can start after the 20th.",
+          "Can the contract be reduced to fewer days or paused for crunch weeks?",
+          "Does the rebrand client have more work lined up, and how reliably do they pay?",
+          "Monthly costs in number form, to test whether contract pay covers them.",
+          "Are the two old clients ignoring you or in a dispute, and do your terms allow late fees?",
+          "Does the contract bar you from competing or similar client work?"
+        ],
+        "quadrant": {
+          "x": "",
+          "y": "",
+          "items": []
+        },
+        "matrix": {
+          "criteria": [],
+          "rows": []
+        }
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:00:18.392Z",
+      "startedAt": "2026-10-28T21:00:18.396Z",
+      "endedAt": "2026-10-28T21:00:35.868Z"
+    },
+    "n9": {
+      "id": "n9",
+      "kind": "method",
+      "scope": "root",
+      "title": "Impact vs effort",
+      "deps": [
+        "n5"
+      ],
+      "data": {
+        "method": "impact-effort",
+        "name": "Impact vs effort",
+        "how": "Place each action on impact and effort. Name the quick wins, the big bets, and what to skip.",
+        "focus": "What should I do first this month, what can wait, and should I take the agency contract?",
+        "why": "Jev: 91% likely to help",
+        "checks": [],
+        "ring": 1
+      },
+      "status": "done",
+      "out": {
+        "summary": "By impact and effort, the quick wins are chasing the two invoices and asking the agency about motion work and start date. The big bet you must make is finishing the rebrand by the 20th. Take the agency contract only on terms that protect the rebrand window, and try a counter-offer first. Rates, portfolio and motion learning wait.",
+        "findings": [
+          {
+            "text": "Rebrand is due the 20th, about half done, about 25 hours left.",
+            "kind": "evidence"
+          },
+          {
+            "text": "Two old invoices are long overdue and together equal about one month of costs.",
+            "kind": "evidence"
+          },
+          {
+            "text": "Runway is 1-3 months with no new money.",
+            "kind": "evidence"
+          },
+          {
+            "text": "Contract: six months fixed, 30 days notice, pay below your day rate, about two days a week. Pay amount and start date are not given.",
+            "kind": "evidence"
+          },
+          {
+            "text": "You don't know if the agency does motion work; you can ask this week.",
+            "kind": "evidence"
+          },
+          {
+            "text": "Chasing invoices is low effort (a few emails or calls) and high impact: it could add about a month of runway.",
+            "kind": "inference"
+          },
+          {
+            "text": "The rebrand is high effort but high impact. It is a hard deadline and likely your best case study and referral source.",
+            "kind": "inference"
+          },
+          {
+            "text": "Asking the agency about motion work and start date is near-zero effort and could change the contract decision.",
+            "kind": "inference"
+          },
+          {
+            "text": "A rate rise is low effort if applied only to new quotes. Its impact is high over time but near zero this month.",
+            "kind": "inference"
+          },
+          {
+            "text": "A portfolio rebuild and motion learning are high effort with no payoff before the 20th.",
+            "kind": "inference"
+          },
+          {
+            "text": "The contract can start after the 20th, so the rebrand is not at risk.",
+            "kind": "assumption"
+          },
+          {
+            "text": "Overdue clients can pay if pushed firmly, and the debts are not disputed.",
+            "kind": "assumption"
+          }
+        ],
+        "options": [
+          {
+            "title": "Quick wins first, then the big bet",
+            "detail": "This week: send firm invoice reminders and ask the agency about motion work, start date and exact pay. Then block the 25 rebrand hours. Decide on the contract after the answers."
+          },
+          {
+            "title": "Accept the contract with a start after the 20th",
+            "detail": "Gives steady income without hurting the deadline. Ask to start in late November. Fits a 1-3 month runway."
+          },
+          {
+            "title": "Counter-offer the contract",
+            "detail": "Ask for a higher rate, one to two days a week, or motion projects included. Low effort, reversible, and it tests how much they want you."
+          },
+          {
+            "title": "Decline and go all-in on freelance",
+            "detail": "Highest upside on rates, but only safe if the invoices are paid and new work is lined up. Not safe today on what you've said."
+          }
+        ],
+        "cuts": [
+          {
+            "what": "Portfolio rebuild this month",
+            "why": "High effort, no payoff before the 20th. Revisit after the rebrand ships and use it as a case study."
+          },
+          {
+            "what": "Starting motion design learning now",
+            "why": "High effort and competes with the deadline. Revisit once you know if the agency offers motion work."
+          },
+          {
+            "what": "Raising the price on the current rebrand",
+            "why": "Mid-project changes harm trust. Apply the new rate to new quotes only."
+          },
+          {
+            "what": "Deciding on the contract before getting answers",
+            "why": "The decision hinges on pay, start date and motion work, all cheap to find out this week."
+          }
+        ],
+        "risks": [
+          "Invoice chasing turns into a long time sink; cap it at short, firm messages with a payment date.",
+          "Rebrand slips if the contract starts before the 20th.",
+          "Below-rate contract may anchor your rate low and use time you need to find new clients.",
+          "Six-month fixed term may lock you in more than the 30-day notice suggests; check the wording.",
+          "Delaying the rate rise and portfolio may leave thin new-client pipeline after the rebrand."
+        ],
+        "unknowns": [
+          "Exact contract pay compared with your monthly costs.",
+          "Contract start date and whether it can be pushed past the 20th.",
+          "Whether the agency does motion work you could join.",
+          "Exact invoice amounts, ages and any late-fee terms.",
+          "Whether the rebrand client has more work lined up.",
+          "Whether the contract bars other work or has exclusivity terms."
+        ],
+        "quadrant": {
+          "x": "Effort",
+          "y": "Impact",
+          "items": [
+            {
+              "text": "Chase the two overdue invoices",
+              "x_high": false,
+              "y_high": true,
+              "note": "Quick win: a few messages could recover about a month of costs."
+            },
+            {
+              "text": "Ask the agency about motion work, start date and pay",
+              "x_high": false,
+              "y_high": true,
+              "note": "Quick win: one email settles the key unknowns."
+            },
+            {
+              "text": "Finish the rebrand by the 20th",
+              "x_high": true,
+              "y_high": true,
+              "note": "Big bet: about 25 hours, hard deadline, protect the time."
+            },
+            {
+              "text": "Take or counter the agency contract",
+              "x_high": false,
+              "y_high": true,
+              "note": "Steady income; negotiate start and terms after the answers."
+            },
+            {
+              "text": "Raise rates on new quotes",
+              "x_high": false,
+              "y_high": true,
+              "note": "Cheap to do, pays off over time; start with the next quote."
+            },
+            {
+              "text": "Rebuild the portfolio site",
+              "x_high": true,
+              "y_high": false,
+              "note": "Skip this month; do it after the rebrand ships."
+            },
+            {
+              "text": "Learn motion design",
+              "x_high": true,
+              "y_high": false,
+              "note": "Skip for now; revisit after the agency answer."
+            }
+          ]
+        },
+        "matrix": {
+          "criteria": [],
+          "rows": []
+        }
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:00:18.392Z",
+      "startedAt": "2026-10-28T21:00:33.079Z",
+      "endedAt": "2026-10-28T21:00:47.376Z"
+    },
+    "n10": {
+      "id": "n10",
+      "kind": "converge",
+      "scope": "root",
+      "title": "Come back together",
+      "deps": [
+        "n6",
+        "n7",
+        "n8",
+        "n9"
+      ],
+      "data": {
+        "jev": {
+          "kind": "gate",
+          "ms": 498,
+          "next": "ask",
+          "confidence": 0.95,
+          "probabilities": {
+            "commit": 0.01,
+            "develop": 0.03,
+            "more": 0,
+            "ask": 0.96
+          },
+          "decidedBy": "jev",
+          "claude": {
+            "next": "ask",
+            "enough": false
+          },
+          "options": [
+            {
+              "id": "o1",
+              "fit": 0.89,
+              "fitConfidence": 0.64,
+              "breaks": 0.11
+            },
+            {
+              "id": "o2",
+              "fit": 0.5025,
+              "fitConfidence": 0.58,
+              "breaks": 0.24
+            },
+            {
+              "id": "o3",
+              "fit": 0.115,
+              "fitConfidence": 0.62,
+              "breaks": 0.77
+            },
+            {
+              "id": "o4",
+              "fit": 0.1775,
+              "fitConfidence": 0.41,
+              "breaks": 0.23
+            },
+            {
+              "id": "o5",
+              "fit": 0.4475,
+              "fitConfidence": 0.42,
+              "breaks": 0.08
+            },
+            {
+              "id": "o6",
+              "fit": 0.4225,
+              "fitConfidence": 0.36,
+              "breaks": 0.08
+            }
+          ],
+          "dropped": []
+        }
+      },
+      "status": "done",
+      "out": {
+        "summary": "All four methods agree on the order. Finish the rebrand (about 25 hours) and chase the two overdue invoices first. Ask the agency about pay, start date and motion work this week. Rates, portfolio and motion learning wait. The contract looks like a likely yes, but only on terms that protect the 20th. The answer hinges on facts you can get this week: start date, exact pay, and whether pay covers costs.",
+        "question": "Given 1-3 months runway and a hard rebrand deadline on the 20th, should you accept the agency contract, and on what start date, pay and days, once you finish the rebrand and chase the invoices?",
+        "changed": "Now centres on contract terms and start date, not just ordering.",
+        "all": [
+          {
+            "id": "o1",
+            "title": "Rebrand and invoices first, then sign with a start after the 20th",
+            "detail": "Block the 25 rebrand hours. Send firm payment reminders with a pay-by date this week. Ask the agency about motion work, pay and start date. Sign if pay helps cover costs and start is after the 20th.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ]
+          },
+          {
+            "id": "o2",
+            "title": "Counter-offer the contract",
+            "detail": "Ask for 1-1.5 days a week, a rate nearer your day rate, or motion work included. Decide your floor first. Cheap to try; the offer could cool.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ]
+          },
+          {
+            "id": "o3",
+            "title": "Take the contract now",
+            "detail": "Fastest steady income, but two days a week leave the rebrand window and put the 20th at risk.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order"
+            ]
+          },
+          {
+            "id": "o4",
+            "title": "Decline and go fully freelance",
+            "detail": "Keeps all days for rates, portfolio and motion. Unsafe on 1-3 months runway unless invoices are paid and new work is lined up. Pipeline unknown.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ]
+          },
+          {
+            "id": "o5",
+            "title": "Defer rates, portfolio and motion learning",
+            "detail": "Apply the rate rise to new quotes only. Reuse the finished rebrand as a case study later. Revisit motion once you know if the agency does it.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ]
+          },
+          {
+            "id": "o6",
+            "title": "Cap invoice chasing",
+            "detail": "Short, firm messages with a pay date. Escalate to a final notice or late fees if ignored. Do not let it eat rebrand hours.",
+            "from": [
+              "impact-effort",
+              "second-order"
+            ]
+          }
+        ],
+        "top": [
+          {
+            "id": "o1",
+            "why": "Protects the hard deadline and the cash, and the decision waits only days for facts you can get this week."
+          },
+          {
+            "id": "o2",
+            "why": "Cheap and reversible. It can fix the below-rate pay or the two-day load before you sign."
+          },
+          {
+            "id": "o5",
+            "why": "Keeps the month feasible. These items matter but cannot fit now, and the rate rise costs nothing on new quotes."
+          }
+        ],
+        "combine": "Do o1 with o2 inside it, and o5 as the parking rule. This week: send the invoice reminders and ask the agency three things (pay, start date after the 20th, motion work), with a counter ready. Block the 25 rebrand hours. Sign after the answers if pay plus freelance income covers costs.",
+        "enough": false,
+        "confidence": {
+          "level": "medium",
+          "basis": "Four methods agree and rest on your stated facts. Contract pay, start date and pipeline are unknown, and they could change the yes or no."
+        },
+        "next": "ask",
+        "questions": [
+          {
+            "id": "q1",
+            "q": "Roughly what does the contract pay per month, and does pay plus what you could earn on your other three days cover your monthly costs?",
+            "why": "Decides whether signing is safe or only a partial fix, and what floor to hold in a counter-offer.",
+            "options": [
+              "Covers costs with freelance income",
+              "Covers only part, I need more",
+              "Don't know yet, will ask"
+            ],
+            "blocking": true,
+            "jev": {
+              "changes": 0.92,
+              "blocks": 0.57
+            }
+          },
+          {
+            "id": "q2",
+            "q": "Can the contract start after the 20th?",
+            "why": "A start before the 20th puts the rebrand deadline at risk and would push toward negotiating or declining.",
+            "options": [
+              "Yes, flexible",
+              "No, must start earlier",
+              "Don't know yet, will ask"
+            ],
+            "blocking": true,
+            "jev": {
+              "changes": 0.92,
+              "blocks": 0.42
+            }
+          },
+          {
+            "id": "q3",
+            "q": "After the rebrand, do you have other paid client work lined up?",
+            "why": "If yes, declining or a lighter deal is safer. If no, the contract matters more.",
+            "options": [
+              "Yes, enough",
+              "Some",
+              "None"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.9,
+              "blocks": 0.26
+            }
+          }
+        ],
+        "research": [],
+        "open_points": [
+          {
+            "id": "p1",
+            "text": "Exact contract pay and whether it covers costs with freelance income",
+            "raised_in": [
+              "frame",
+              "eisenhower",
+              "opportunity-cost",
+              "impact-effort"
+            ],
+            "times": 4,
+            "action": "ask",
+            "rank": 1,
+            "unlocks": "Sign, counter or decline"
+          },
+          {
+            "id": "p2",
+            "text": "Contract start date: can it start after the 20th?",
+            "raised_in": [
+              "frame",
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ],
+            "times": 5,
+            "action": "ask",
+            "rank": 2,
+            "unlocks": "Whether the rebrand deadline is safe"
+          },
+          {
+            "id": "p3",
+            "text": "Does the agency do motion work you could join?",
+            "raised_in": [
+              "frame",
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ],
+            "times": 5,
+            "action": "ask",
+            "rank": 3,
+            "unlocks": "Whether contract doubles as motion learning"
+          },
+          {
+            "id": "p4",
+            "text": "Does the 30-day notice allow early exit inside the six-month term?",
+            "raised_in": [
+              "frame",
+              "second-order",
+              "impact-effort"
+            ],
+            "times": 3,
+            "action": "ask",
+            "rank": 4,
+            "unlocks": "How locked-in the contract really is"
+          },
+          {
+            "id": "p5",
+            "text": "Is other paid client work lined up after the rebrand?",
+            "raised_in": [
+              "frame",
+              "opportunity-cost"
+            ],
+            "times": 2,
+            "action": "ask",
+            "rank": 5,
+            "unlocks": "Safety of declining or a lighter deal"
+          },
+          {
+            "id": "p6",
+            "text": "Exact invoice amounts, ages and payment terms",
+            "raised_in": [
+              "frame"
+            ],
+            "times": 1,
+            "action": "research",
+            "rank": 6,
+            "unlocks": "How hard to push, and runway extension"
+          },
+          {
+            "id": "p7",
+            "text": "Your floor: minimum rate and days you would accept in a counter-offer",
+            "raised_in": [
+              "opportunity-cost",
+              "impact-effort"
+            ],
+            "times": 2,
+            "action": "decide",
+            "rank": 7,
+            "unlocks": "Counter-offer terms"
+          }
+        ],
+        "stop_reason": "The next action is clear, but the contract decision turns on pay and start date only you can supply, so asking beats more branching."
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:00:18.392Z",
+      "startedAt": "2026-10-28T21:00:47.376Z",
+      "endedAt": "2026-10-28T21:01:05.061Z"
+    },
+    "n11": {
+      "id": "n11",
+      "kind": "ask",
+      "scope": "root",
+      "title": "Your input",
+      "deps": [
+        "n10"
+      ],
+      "data": {
+        "from": "converge",
+        "questions": [
+          {
+            "id": "q1",
+            "q": "Roughly what does the contract pay per month, and does pay plus what you could earn on your other three days cover your monthly costs?",
+            "why": "Decides whether signing is safe or only a partial fix, and what floor to hold in a counter-offer.",
+            "options": [
+              "Covers costs with freelance income",
+              "Covers only part, I need more",
+              "Don't know yet, will ask"
+            ],
+            "blocking": true,
+            "jev": {
+              "changes": 0.92,
+              "blocks": 0.57
+            }
+          },
+          {
+            "id": "q2",
+            "q": "Can the contract start after the 20th?",
+            "why": "A start before the 20th puts the rebrand deadline at risk and would push toward negotiating or declining.",
+            "options": [
+              "Yes, flexible",
+              "No, must start earlier",
+              "Don't know yet, will ask"
+            ],
+            "blocking": true,
+            "jev": {
+              "changes": 0.92,
+              "blocks": 0.42
+            }
+          },
+          {
+            "id": "q3",
+            "q": "After the rebrand, do you have other paid client work lined up?",
+            "why": "If yes, declining or a lighter deal is safer. If no, the contract matters more.",
+            "options": [
+              "Yes, enough",
+              "Some",
+              "None"
+            ],
+            "blocking": false,
+            "jev": {
+              "changes": 0.9,
+              "blocks": 0.26
+            }
+          }
+        ]
+      },
+      "status": "done",
+      "out": {
+        "answers": [
+          {
+            "q": "Roughly what does the contract pay per month, and does pay plus what you could earn on your other three days cover your monthly costs?",
+            "a": "Covers only part, I need more"
+          },
+          {
+            "q": "Can the contract start after the 20th?",
+            "a": "Yes, flexible"
+          },
+          {
+            "q": "After the rebrand, do you have other paid client work lined up?",
+            "a": "Some"
+          }
+        ],
+        "skipped": false,
+        "summary": "3 answer(s)"
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:01:05.061Z"
+    },
+    "n12": {
+      "id": "n12",
+      "kind": "converge",
+      "scope": "root",
+      "title": "Restate with your answers",
+      "deps": [
+        "n11"
+      ],
+      "data": {
+        "jev": {
+          "kind": "gate",
+          "ms": 150,
+          "next": "develop",
+          "confidence": 0.64,
+          "probabilities": {
+            "commit": 0.21,
+            "develop": 0.76,
+            "more": 0.03
+          },
+          "decidedBy": "claude",
+          "claude": {
+            "next": "commit",
+            "enough": true
+          },
+          "options": [
+            {
+              "id": "o1",
+              "fit": 0.925,
+              "fitConfidence": 0.75,
+              "breaks": 0.1
+            },
+            {
+              "id": "o2",
+              "fit": 0.5325,
+              "fitConfidence": 0.54,
+              "breaks": 0.14
+            },
+            {
+              "id": "o3",
+              "fit": 0.3425,
+              "fitConfidence": 0.13,
+              "breaks": 0.32
+            },
+            {
+              "id": "o4",
+              "fit": 0.08,
+              "fitConfidence": 0.74,
+              "breaks": 0.8
+            },
+            {
+              "id": "o5",
+              "fit": 0.385,
+              "fitConfidence": 0.43,
+              "breaks": 0.1
+            }
+          ],
+          "dropped": []
+        }
+      },
+      "status": "done",
+      "out": {
+        "summary": "All branches agree. Finish the rebrand, chase the invoices and ask the agency three questions this week. Then take the contract only with a start after the 20th and only if pay plus freelance income gets close to costs. Rates, portfolio and motion learning wait. One user fact is still open: your cost floor against the contract pay. The sequence does not depend on it, only the final signing does.",
+        "question": "Should you sign the agency contract, given a 1-3 month runway, if it starts after the 20th and its pay plus your other three days gets close enough to your monthly costs?",
+        "changed": "Now conditional on a post-20th start and a pay floor.",
+        "all": [
+          {
+            "id": "o1",
+            "title": "Rebrand and invoices first, then sign with a start after the 20th",
+            "detail": "Block 25 rebrand hours. Send firm invoice reminders with a pay-by date this week. Ask the agency about pay, start date and motion work. Sign if pay helps cover costs and start is after the 20th.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ]
+          },
+          {
+            "id": "o2",
+            "title": "Counter-offer the contract",
+            "detail": "Ask for 1-1.5 days a week, a rate nearer your day rate, or motion work included. Decide your floor first. Cheap to try; the offer could cool.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ]
+          },
+          {
+            "id": "o3",
+            "title": "Decline and go all-in freelance",
+            "detail": "Keeps full capacity for rates, portfolio and motion. Unsafe on a 1-3 month runway unless invoices are paid and work is lined up. You only have 'some' work lined up.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ]
+          },
+          {
+            "id": "o4",
+            "title": "Take the contract now",
+            "detail": "Fastest steady income but collides with the 25 rebrand hours and risks the hard deadline.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order"
+            ]
+          },
+          {
+            "id": "o5",
+            "title": "Park rates, portfolio and motion learning",
+            "detail": "Apply the rate rise to new quotes only. Reuse the finished rebrand as a case study later. Revisit motion once you know if the agency does it.",
+            "from": [
+              "eisenhower",
+              "opportunity-cost",
+              "second-order",
+              "impact-effort"
+            ]
+          }
+        ],
+        "top": [
+          {
+            "id": "o1",
+            "why": "Protects the hard deadline and cash. The decision waits only days for facts you can get this week."
+          },
+          {
+            "id": "o2",
+            "why": "Cheap and reversible. It can fix below-rate pay or the two-day load before signing."
+          },
+          {
+            "id": "o5",
+            "why": "Keeps the month feasible. The rate rise costs nothing on new quotes."
+          }
+        ],
+        "combine": "Do o1 with o2 inside it, and o5 as the parking rule. This week: send invoice reminders, ask the agency for pay, a start date after the 20th and whether they do motion work, with a counter ready. Block the 25 rebrand hours. Sign after the answers if pay plus freelance income covers most of your costs.",
+        "enough": true,
+        "confidence": {
+          "level": "medium",
+          "basis": "Four methods agree and rest on your stated runway, deadline, invoices and flexible start. The contract pay amount and your cost floor are unknown."
+        },
+        "next": "commit",
+        "questions": [
+          {
+            "id": "q1",
+            "q": "What is the contract's monthly pay against your monthly costs?",
+            "why": "Decides whether to sign as offered or counter.",
+            "options": [
+              "Covers over half",
+              "Covers under half"
+            ],
+            "blocking": false
+          }
+        ],
+        "research": [],
+        "open_points": [
+          {
+            "id": "p1",
+            "text": "Exact contract pay against monthly costs, and your minimum acceptable pay",
+            "raised_in": [
+              "frame",
+              "eisenhower",
+              "opportunity-cost"
+            ],
+            "times": 3,
+            "action": "decide",
+            "rank": 1,
+            "unlocks": "Sign as offered, counter, or decline"
+          },
+          {
+            "id": "p2",
+            "text": "Whether the agency does motion work you could join",
+            "raised_in": [
+              "frame",
+              "eisenhower",
+              "second-order",
+              "impact-effort"
+            ],
+            "times": 4,
+            "action": "ask",
+            "rank": 2,
+            "unlocks": "Whether the contract also pays you to learn motion"
+          },
+          {
+            "id": "p3",
+            "text": "Whether early exit is allowed within the six-month term",
+            "raised_in": [
+              "opportunity-cost",
+              "impact-effort"
+            ],
+            "times": 2,
+            "action": "ask",
+            "rank": 3,
+            "unlocks": "How risky the lock-in is"
+          },
+          {
+            "id": "p4",
+            "text": "Invoice amounts, ages and late-payment terms",
+            "raised_in": [
+              "frame",
+              "impact-effort"
+            ],
+            "times": 2,
+            "action": "research",
+            "rank": 4,
+            "unlocks": "How firmly to chase and whether to add late fees"
+          },
+          {
+            "id": "p5",
+            "text": "How much freelance work is lined up after the rebrand",
+            "raised_in": [
+              "frame",
+              "second-order"
+            ],
+            "times": 2,
+            "action": "ask",
+            "rank": 5,
+            "unlocks": "How much runway risk the contract offsets"
+          }
+        ],
+        "stop_reason": "Further thinking would not change the next action: do the same this-week steps, and signing depends on facts only the agency and your own budget can supply."
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:01:17.886Z",
+      "startedAt": "2026-10-28T21:01:17.886Z",
+      "endedAt": "2026-10-28T21:01:30.382Z"
+    },
+    "n13": {
+      "id": "n13",
+      "kind": "review",
+      "scope": "root",
+      "title": "Skeptic review",
+      "deps": [
+        "n12"
+      ],
+      "data": {},
+      "status": "done",
+      "out": {
+        "summary": "The direction is sound: finish the rebrand, chase invoices, ask the agency, then sign if the numbers work. It has gaps. \"Covers most of your costs\" is a weak signing test, and the user said it covers only part. There is no pay floor and no fallback if the invoices stay unpaid. The six-month term and early-exit wording are unchecked. The agency could also withdraw or fill the role while the user waits. Fixable without changing the direction. Not fatal.",
+        "unsupported": [
+          "The contract can start after the 20th. The user said start is flexible, but the agency has not confirmed it.",
+          "Chasing the invoices will recover cash. Nothing shows the old clients can or will pay. The amounts, ages and terms are unknown.",
+          "25 hours fits in three weeks alongside invoice chasing and agency talks. This is an estimate, and the 25 hours is the user's own figure.",
+          "The offer will still be open after the user waits for answers or finishes the rebrand. The agency has given no deadline.",
+          "30 days notice allows an early exit within the six-month term. The user stated 30 days notice but not whether early exit is allowed.",
+          "The contract will anchor the user's rate low and block a rate rise. This is plausible but not stated.",
+          "Pay plus freelance income 'covers most of your costs' is enough to sign. The user said it covers only part and they need more. No figures are given."
+        ],
+        "objections": [
+          {
+            "text": "The signing test is vague and does not fit what the user said. They said pay plus the other three days covers only part of their costs and that they need more. 'Covers most' is not defined and is not enough on its own. Signing could lock in a six-month income gap.",
+            "severity": "serious",
+            "fix": "Before replying to the agency, get the monthly pay figure. Work out a minimum monthly income the user needs. Compare contract pay plus realistic income from three freelance days against it. If it falls short, counter on rate or days, or plan how to fill the gap before signing."
+          },
+          {
+            "text": "There is no fallback if the invoices stay unpaid and the agency withdraws the offer. Runway is 1-3 months, so the cost of waiting is real. The direction treats waiting a few days as free but sets no deadline.",
+            "severity": "serious",
+            "fix": "Set a date, for example within one week, to get the agency's answers. Tell them the user is interested and wants a start after the 20th. Set a pay-by date on the invoices and decide in advance what happens if it passes (final notice, late fee, small-claims route)."
+          },
+          {
+            "text": "The six-month fixed term and the 30-day notice may conflict. If notice can only be given after the term, the user is locked in below their day rate for six months. This is not checked.",
+            "severity": "serious",
+            "fix": "Read the contract wording. Ask in writing whether the user can end it with 30 days notice at any time, and whether other freelance clients and motion learning are allowed."
+          },
+          {
+            "text": "The counter-offer could cool the agency. The user may have little leverage with a short runway. 'Decide your floor first' is stated but no method is given.",
+            "severity": "minor",
+            "fix": "Set one or two asks only (start date after the 20th, and either rate or days). Pick a walk-away point before the conversation."
+          },
+          {
+            "text": "Plan rests on the rebrand client paying on time. The old clients paid late, and the user's other work is only 'some'. The rebrand is the main current income and this risk is not covered.",
+            "severity": "minor",
+            "fix": "Confirm the rebrand's payment terms. Ask for the final payment on delivery, or invoice immediately on approval."
+          },
+          {
+            "text": "Parking the rate rise has a hidden cost if the contract is signed. New quotes made during the contract will compete for only three days. The rate rise is also cheapest to do now, while quoting for work after the rebrand.",
+            "severity": "minor",
+            "fix": "Set the new rate now, even if not announced. Use it in the first new quote. Do not wait for the contract to start."
+          }
+        ],
+        "fatal": false
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:01:30.383Z",
+      "startedAt": "2026-10-28T21:01:30.383Z",
+      "endedAt": "2026-10-28T21:01:53.295Z"
+    },
+    "n14": {
+      "id": "n14",
+      "kind": "decide",
+      "scope": "root",
+      "title": "Decision",
+      "deps": [
+        "n13"
+      ],
+      "data": {},
+      "status": "done",
+      "out": {
+        "call": "test",
+        "title": "Finish rebrand, then test the contract",
+        "summary": "Finish the rebrand, chase the invoices, and get the contract's pay, start date and exit terms this week. Lean toward signing, but only if the numbers close the gap or a counter does.",
+        "recommendation": "Don't sign yet. Ask the agency this week for exact pay, a start after the 20th, exit terms and motion work. Sign only if pay plus three freelance days reaches your minimum income, or a counter gets it there.",
+        "goal_served": "Keep income coming through a 1-3 month runway without missing the 20th. (Inferred goal: get through the month in order.)",
+        "reasons": [
+          "You stated runway is 1-3 months, so steady income has real weight. A flat no is risky.",
+          "You stated pay plus your other three days covers only part of costs. Signing as is could lock in a six-month shortfall.",
+          "You stated the start is flexible, so the rebrand (about 25 hours, stated) is safe if the start is after the 20th.",
+          "Pay amount, early-exit wording and motion work are all unknown and cheap to ask this week. Deciding blind costs more.",
+          "Chasing the two invoices (about one month of costs, stated) takes little time and could ease the pressure to accept weak terms. (Inference)"
+        ],
+        "tradeoffs": [
+          "Taking the contract gives steady income but uses about two days a week at below your day rate.",
+          "Fewer free days means less time for new clients, the portfolio and motion learning.",
+          "A counter-offer could cool the agency, and waiting a few days risks the offer.",
+          "Declining keeps your rate and time but leaves income lumpy on a short runway."
+        ],
+        "cuts": [
+          {
+            "what": "Portfolio rebuild this month",
+            "why": "No payoff before the 20th. Reuse the finished rebrand as a case study later."
+          },
+          {
+            "what": "Motion design learning now",
+            "why": "It competes with the deadline. Revisit once you know if the agency does motion work."
+          },
+          {
+            "what": "Rate rise on the current rebrand",
+            "why": "Changing price mid-project harms trust. Set the new rate now and use it on every new quote."
+          },
+          {
+            "what": "Deciding the contract before the answers arrive",
+            "why": "Pay, start date, exit terms and motion work can all be asked within a week."
+          }
+        ],
+        "uncertainty": [
+          "Exact monthly contract pay is unknown.",
+          "Whether 30 days notice works inside the six-month term is unknown.",
+          "Whether the agency does motion work is unknown.",
+          "Your minimum monthly income has not been set.",
+          "How much paid work follows the rebrand is unknown. You said only 'some'.",
+          "Whether the old invoices will actually be paid is unknown.",
+          "The rebrand client's payment terms are unknown."
+        ],
+        "would_change": [
+          "Pay plus three freelance days clearly reaches your minimum income: sign with a start after the 20th.",
+          "Early exit is not allowed or the contract bars other clients: counter or decline.",
+          "The agency does motion work: the contract is worth more, so lean harder toward signing.",
+          "Both invoices are paid and a pipeline exists: you can decline or push harder on a counter.",
+          "The agency needs you to start before the 20th: counter on the start date, or decline."
+        ],
+        "door": "two-way",
+        "displaces": "Some of this week's rebrand time goes to emails and the contract questions.",
+        "revisit_if": "The agency answers, or seven days pass with no answer, or either invoice is paid.",
+        "next_action": {
+          "what": "Email the agency: ask monthly pay, start after the 20th, early-exit wording, other clients allowed, and motion work.",
+          "owner": "the user",
+          "when": "Within 2 days, answers due in 7"
+        },
+        "test": "This week, send the agency one email with those questions and a reply-by date. Also send both old clients a firm invoice reminder with a pay-by date. Then compare contract pay plus realistic income from three freelance days with your minimum monthly income.",
+        "rule": "If an income offer arrives while a hard deadline is running, then ask for a start after the deadline and set a reply-by date within a week."
+      },
+      "error": null,
+      "createdAt": "2026-10-28T21:01:53.296Z",
+      "startedAt": "2026-10-28T21:01:53.296Z",
+      "endedAt": "2026-10-28T21:02:05.876Z"
+    }
+  },
+  "order": [
+    "n1",
+    "n2",
+    "n3",
+    "n4",
+    "n5",
+    "n6",
+    "n7",
+    "n8",
+    "n9",
+    "n10",
+    "n11",
+    "n12",
+    "n13",
+    "n14"
+  ],
+  "corrections": [],
+  "constraints": [],
+  "pointAnswers": [],
+  "picks": {},
+  "cost": 0.46083205,
+  "activity": [
+    {
+      "t": "2026-10-28T20:58:49.115Z",
+      "text": "Run started on Claude Sonnet 5.5, Jev deciding the routes"
+    },
+    {
+      "t": "2026-10-28T20:58:49.115Z",
+      "text": "Frame it: started"
+    },
+    {
+      "t": "2026-10-28T20:59:24.041Z",
+      "text": "Frame it: One hard deadline (rebrand by the 20th), money owed, three slow goals (rates, portfolio, motion), and one big decision (agency contract, two days a week). First moves look like the rebrand and chasing the invoices. The contract decision depends on cash runway, contract terms, and how much rebrand work is left. Rates, portfolio and motion can wait, but a rate rise for new work costs nothing to start."
+    },
+    {
+      "t": "2026-10-28T20:59:49.367Z",
+      "text": "Your input: needs a little more on 1 question"
+    },
+    {
+      "t": "2026-10-28T20:59:54.462Z",
+      "text": "Your input: 6 answer(s)"
+    },
+    {
+      "t": "2026-10-28T20:59:54.462Z",
+      "text": "Reframe: started"
+    },
+    {
+      "t": "2026-10-28T21:00:18.176Z",
+      "text": "Reframe: You have a hard rebrand deadline, thin cash (1-3 months), and about one month of costs tied up in overdue invoices. The rebrand has about 25 hours left, so it fits. Collecting the invoices is the fastest cash lever. The agency contract is steady but pays below your day rate and takes two days a week for six months, with a 30-day exit. Rates, portfolio and motion learning are not urgent and can wait until the rebrand ships."
+    },
+    {
+      "t": "2026-10-28T21:00:18.176Z",
+      "text": "Pick methods: started"
+    },
+    {
+      "t": "2026-10-28T21:00:18.392Z",
+      "text": "Pick methods: Jev picked 4 methods in 0.2s."
+    },
+    {
+      "t": "2026-10-28T21:00:18.392Z",
+      "text": "Urgent / important: started"
+    },
+    {
+      "t": "2026-10-28T21:00:18.394Z",
+      "text": "Opportunity cost: started"
+    },
+    {
+      "t": "2026-10-28T21:00:18.396Z",
+      "text": "Second-order effects: started"
+    },
+    {
+      "t": "2026-10-28T21:00:33.079Z",
+      "text": "Urgent / important: Do now: finish the rebrand (about 25 hours) and chase the two overdue invoices. Schedule: ask the agency about motion work this week, then decide on the contract. Wait: rate rise (apply to new quotes only), portfolio, motion learning. Lean toward taking the contract only after the rebrand ships, since runway is 1-3 months and the invoices are about one month of costs. Answer hinges on start date and pay."
+    },
+    {
+      "t": "2026-10-28T21:00:33.079Z",
+      "text": "Impact vs effort: started"
+    },
+    {
+      "t": "2026-10-28T21:00:35.542Z",
+      "text": "Opportunity cost: Opportunity cost view: the rebrand (25 hours, hard deadline) and the overdue invoices come first because they are the cheapest money and the biggest loss if missed. The agency contract's real cost is two days a week of your day rate, but with a 1-3 month runway, steady income likely beats the gap. Don't decide yet: ask about motion work and start date this week, then negotiate a start after the 20th. Rates, portfolio and motion learning wait."
+    },
+    {
+      "t": "2026-10-28T21:00:35.868Z",
+      "text": "Second-order effects: Second-order view: finish the rebrand first, chase the two invoices this week, and treat the agency contract as likely yes but only after you ask about start date, pay and motion work. The contract's steady pay fixes your thin runway. Its cost is two days a week, which squeezes the rate rise, the portfolio and motion learning. Those can wait and mostly cannot be done in parallel."
+    },
+    {
+      "t": "2026-10-28T21:00:47.376Z",
+      "text": "Impact vs effort: By impact and effort, the quick wins are chasing the two invoices and asking the agency about motion work and start date. The big bet you must make is finishing the rebrand by the 20th. Take the agency contract only on terms that protect the rebrand window, and try a counter-offer first. Rates, portfolio and motion learning wait."
+    },
+    {
+      "t": "2026-10-28T21:00:47.376Z",
+      "text": "Come back together: started"
+    },
+    {
+      "t": "2026-10-28T21:01:05.061Z",
+      "text": "Come back together: All four methods agree on the order. Finish the rebrand (about 25 hours) and chase the two overdue invoices first. Ask the agency about pay, start date and motion work this week. Rates, portfolio and motion learning wait. The contract looks like a likely yes, but only on terms that protect the 20th. The answer hinges on facts you can get this week: start date, exact pay, and whether pay covers costs."
+    },
+    {
+      "t": "2026-10-28T21:01:17.886Z",
+      "text": "Your input: 3 answer(s)"
+    },
+    {
+      "t": "2026-10-28T21:01:17.886Z",
+      "text": "Restate with your answers: started"
+    },
+    {
+      "t": "2026-10-28T21:01:30.383Z",
+      "text": "Restate with your answers: All branches agree. Finish the rebrand, chase the invoices and ask the agency three questions this week. Then take the contract only with a start after the 20th and only if pay plus freelance income gets close to costs. Rates, portfolio and motion learning wait. One user fact is still open: your cost floor against the contract pay. The sequence does not depend on it, only the final signing does."
+    },
+    {
+      "t": "2026-10-28T21:01:30.383Z",
+      "text": "Skeptic review: started"
+    },
+    {
+      "t": "2026-10-28T21:01:53.296Z",
+      "text": "Skeptic review: The direction is sound: finish the rebrand, chase invoices, ask the agency, then sign if the numbers work. It has gaps. \"Covers most of your costs\" is a weak signing test, and the user said it covers only part. There is no pay floor and no fallback if the invoices stay unpaid. The six-month term and early-exit wording are unchecked. The agency could also withdraw or fill the role while the user waits. Fixable without changing the direction. Not fatal."
+    },
+    {
+      "t": "2026-10-28T21:01:53.296Z",
+      "text": "Decision: started"
+    },
+    {
+      "t": "2026-10-28T21:02:05.876Z",
+      "text": "Decision: Finish the rebrand, chase the invoices, and get the contract's pay, start date and exit terms this week. Lean toward signing, but only if the numbers close the gap or a counter does."
+    }
+  ],
+  "updatedAt": "2026-10-28T21:02:05.876Z",
+  "jevStats": {
+    "calls": 6,
+    "ms": 1301
+  }
+}

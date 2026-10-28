@@ -3,6 +3,7 @@ import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Po
 import { layout } from '../shared/layout.js'
 import { api, go, summary, KIND_LABEL, modelName } from './api.js'
 import Panel from './Panel.jsx'
+import { timeline } from './replay.js'
 import MapView from './MapView.jsx'
 
 const STATUS = {
@@ -29,7 +30,9 @@ function FlowNode({ data }) {
 }
 const nodeTypes = { step: FlowNode }
 
-export default function RunView({ id }) {
+const REPO = 'https://github.com/Anthoneyq/thinking-system'
+
+export default function RunView({ id, replay }) {
   const [run, setRun] = useState(null)
   const [gone, setGone] = useState(false)
   const [scope, setScope] = useState('root')
@@ -39,7 +42,26 @@ export default function RunView({ id }) {
   const pickView = v => { setView(v); try { localStorage.setItem('think.view', v) } catch {} }
   const autoSel = useRef(new Set())
 
+  // Replay: step through the run's own timestamps; long model waits collapse, questions get time to read.
+  const [play, setPlay] = useState(0)
+  const [note, setNote] = useState('')
   useEffect(() => {
+    if (!replay) return
+    const { times, frame } = timeline(replay)
+    let i = 0, timer
+    const step = () => {
+      const r = frame(times[i])
+      setRun(r)
+      if (++i >= times.length) { setSel(null); return }
+      const asking = r.order.some(k => r.nodes[k].status === 'waiting')
+      timer = setTimeout(step, asking ? 4500 : 700)
+    }
+    setScope('root'); setSel(null); autoSel.current = new Set(); step()
+    return () => clearTimeout(timer)
+  }, [replay, play])
+
+  useEffect(() => {
+    if (replay) return
     const es = new EventSource(`/api/runs/${id}/events`)
     es.onmessage = e => setRun(JSON.parse(e.data))
     es.onerror = () => fetch(`/api/runs/${id}`).then(r => { if (r.status === 404) { setGone(true); es.close() } })
@@ -57,14 +79,16 @@ export default function RunView({ id }) {
   if (gone) return <div className="empty">That run doesn't exist. <a href="/" onClick={e => { e.preventDefault(); go('/') }}>Start a new one</a></div>
   if (!run) return <div className="empty">Loading...</div>
 
-  const act = (action, body) => api(`runs/${run.id}/${action}`, body)
+  const act = replay
+    ? () => { setNote('This is a replay. Install it to run your own thoughts.'); setTimeout(() => setNote(''), 3500); return Promise.resolve({}) }
+    : (action, body) => api(`runs/${run.id}/${action}`, body)
   const scopes = scopeTrail(run, scope)
   const node = sel && run.nodes[sel]
 
   return (
     <div className="runview">
       <header className="run-top">
-        <a className="brand" href="/" onClick={e => { e.preventDefault(); go('/') }} title="Thinking System"><i /></a>
+        <a className="brand" href={replay ? REPO : '/'} onClick={e => { if (!replay) { e.preventDefault(); go('/') } }} title="Thinking System"><i /></a>
         <div className="run-title">
           <h1>{run.title}</h1>
           <span className="sub">{modelName(run.model)} &middot; {run.effort}{run.cost > 0 ? ` \u00b7 $${run.cost.toFixed(2)}` : ''}</span>
@@ -76,8 +100,13 @@ export default function RunView({ id }) {
           <button role="radio" aria-checked={view === 'steps'} onClick={() => pickView('steps')}>Steps</button>
         </div>
         {view === 'steps' && <label className="check"><input type="checkbox" checked={showOld} onChange={e => setShowOld(e.target.checked)} /> Earlier passes</label>}
-        <a className="ghost" href={`/api/runs/${run.id}/excalidraw?scope=${scope}`}>Export</a>
-        <button className="ghost" onClick={() => go('/')}>New</button>
+        {replay ? <>
+          <button className="ghost" onClick={() => setPlay(p => p + 1)}>Watch again</button>
+          <a className="primary" href={REPO} target="_blank" rel="noreferrer">Get it</a>
+        </> : <>
+          <a className="ghost" href={`/api/runs/${run.id}/excalidraw?scope=${scope}`}>Export</a>
+          <button className="ghost" onClick={() => go('/')}>New</button>
+        </>}
       </header>
       <div className="run-body">
         <section className="canvas">
@@ -94,6 +123,7 @@ export default function RunView({ id }) {
               : <Flow run={run} scope={scope} showOld={showOld} sel={sel} setSel={setSel} onOpenChild={n => { setScope(n.child); setSel(null) }} />}
           </ReactFlowProvider>
           <Caption run={run} scope={scope} />
+          {replay && <div className="replay-tag">Replay of a real run{note ? <b> &middot; {note}</b> : ''}</div>}
         </section>
         <Panel run={run} node={node} sel={sel} scope={scope} act={act} setSel={setSel} setScope={setScope} />
       </div>

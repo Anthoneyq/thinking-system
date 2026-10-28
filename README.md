@@ -4,13 +4,32 @@ Think anything through on a live, branching map. Your question sits in the middl
 
 It runs on your machine and uses your own Claude Code login. Nothing is hosted.
 
-## Install (Claude Code)
+**Watch one run first:** https://thinking-system.vercel.app (a 20-second replay of a real run).
 
-```
-/plugin install thinking-system --marketplace Anthoneyq/thinking-system
-```
+## Install
 
-Answer `y` to add the marketplace, then pick a scope. Needs Node 18+ and Claude Code signed in.
+You need:
+- **Claude Code**, signed in with a Claude Pro or Max plan or an Anthropic API key. Get it at https://claude.com/claude-code.
+- **Node.js 18 or newer** (https://nodejs.org). Check with `node -v`.
+- A web browser.
+
+Then:
+
+1. Open a terminal and start Claude Code: `claude`
+2. Add this repo as a plugin source:
+   ```
+   /plugin marketplace add Anthoneyq/thinking-system
+   ```
+3. Install the plugin:
+   ```
+   /plugin install thinking-system@thinking-system
+   ```
+4. Quit Claude Code (`/exit`) and start it again so `/systems` loads.
+5. Type `/systems`, talk through what's on your mind, and say "go". The live map opens in your browser.
+
+To update later: `/plugin marketplace update thinking-system`. To remove: `/plugin uninstall thinking-system@thinking-system`.
+
+Each run uses your own Claude plan. A normal run is about 3-6 minutes and roughly $0.50-0.80 of usage on Sonnet.
 
 ## Use
 

@@ -427,6 +427,7 @@ export async function answer(run, { nodeId, answers = [], skip = false, asIs = f
   const all = [...(n.data.unclear?.first || []), ...given]
   n.out = { answers: all, skipped: skip || !all.length }
   n.status = 'done'
+  n.endedAt = new Date().toISOString()
   n.out.summary = n.out.skipped ? 'You said: decide yourself' : `${n.out.answers.length} answer(s)`
   log(run, 'Your input: ' + n.out.summary)
   after(run, n, effortOf(run, n.scope), {})

@@ -3,6 +3,18 @@ import { api, go } from './api.js'
 import RunView from './RunView.jsx'
 
 export default function App() {
+  if (import.meta.env.VITE_REPLAY) return <Replay />
+  return <Live />
+}
+
+// The public demo: one finished run, played back.
+function Replay() {
+  const [run, setRun] = useState(null)
+  useEffect(() => { fetch('/demo-run.json').then(r => r.json()).then(setRun) }, [])
+  return run ? <RunView replay={run} /> : <div className="empty">Loading...</div>
+}
+
+function Live() {
   const [path, setPath] = useState(location.pathname)
   useEffect(() => {
     const on = () => setPath(location.pathname)

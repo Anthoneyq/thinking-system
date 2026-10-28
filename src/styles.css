@@ -371,3 +371,6 @@ li.red { color: var(--red); }
 .b-quad span.hot { border-color: var(--accent); color: var(--accent); }
 .lnode { cursor: pointer; }
 .lnode.is-selected { border-color: var(--accent); color: var(--accent); }
+
+.replay-tag { position: absolute; bottom: 14px; left: 12px; z-index: 6; font-size: 12px; color: var(--sub); background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 4px 10px; max-width: calc(100% - 24px); }
+.replay-tag b { color: var(--accent); font-weight: 600; }
