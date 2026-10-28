@@ -85,6 +85,7 @@ export const SCHEMAS = {
   }),
   review: obj({
     summary: str,
+    unsupported: arr(str),
     objections: arr(obj({ text: str, severity: oneOf('fatal', 'serious', 'minor'), fix: str })),
     fatal: bool,
   }),
@@ -98,8 +99,13 @@ export const SCHEMAS = {
     cuts: arr(obj({ what: str, why: str })),
     uncertainty: arr(str),
     would_change: arr(str),
+    call: oneOf('decide', 'test', 'defer', 'ask'),
+    door: oneOf('one-way', 'two-way'),
+    displaces: str,
+    revisit_if: str,
     next_action: obj({ what: str, owner: str, when: str }),
     test: str,
+    rule: str,
   }),
   unstick: obj({
     summary: str,
@@ -120,6 +126,8 @@ Rules:
 - Hard constraints eliminate options; they are never averaged away. Do not invent numeric precision; confidence names its basis.
 - Plain words, short sentences. No filler, no hype. Each item says one thing once.
 - Never invent facts about real people, companies, prices or results. If you do not know, it is an unknown.
+- Another model agreeing is not evidence. A claim is supported only when it traces to what the user stated, given evidence or research.
+- Match care to reversibility: cheap, reversible choices get decided fast; costly or hard-to-undo ones get scrutiny.
 Return only the JSON the schema asks for.`
 
 const methodMenu = METHODS.map(m => `- ${m.id}: ${m.name}. Use when: ${m.when}`).join('\n')
@@ -159,7 +167,7 @@ Report findings (mark each evidence / inference / assumption), options this meth
 2. Show everything: collect every distinct option surfaced so far into "all" (merge duplicates, short ids o1, o2...; "from" = the method ids exactly as written in the method results, e.g. ["small-test", "algorithm"]). Pick the top 3 or fewer that best serve the goal within the constraints, each with why. If parts combine into something better, describe it in "combine"; else "".
 3. Gate. enough = true when further work is unlikely to change the next action. Otherwise choose next:
    develop = grow the top options further (what each takes, risks, tests);
-   research = facts can be looked up (max 3 queries);
+   research = facts can be looked up (max 3 queries; each "why" names the finding that would change the recommendation, otherwise do not research);
    more = different thinking methods are needed;
    ask = the choice now depends on the user's preferences or facts only they know. Ask them, offering the top options as answer choices where natural.
 Growth rounds left: ${opts.loopsLeft}. If 0, do not choose develop, research or more.${opts.loopsLeft > 0 && opts.pass === 1 ? ' This is the first pass: prefer develop unless the answer is already obvious.' : ''}
@@ -190,9 +198,15 @@ Why it matters: ${node.data.why}
 ${opts.web ? 'Use web search and fetch. Cite the source URL for each finding.' : 'You cannot browse. Answer from what you reliably know, set source to "" and verified = false.'}
 Report only facts relevant to the decision.`
     case 'review':
-      return head + `STEP: Adversarial review, one pass. Attack the leading direction as a sharp skeptic would. List real objections only, each with severity and a fix. fatal = true only if the direction should not go ahead as it stands.`
+      return head + `STEP: Adversarial review, one pass. Attack the leading direction as a sharp skeptic would. List real objections only, each with severity and a fix. fatal = true only if the direction should not go ahead as it stands.
+unsupported: claims the direction rests on that do not trace to what the user stated, given evidence or research (agreement between steps does not count). Empty if all are supported.`
     case 'decide':
       return head + `STEP: Decision record. recommendation: the call itself in at most two short sentences (under 40 words); details go in reasons. Then the goal it serves, key reasons, tradeoffs, what to cut and why, what stays uncertain, what would change the answer, the single next action (next_action.what: one short sentence, under 25 words) with owner (the user, or "AI" if an AI can do it) and when, and the smallest test if one applies (else "").
+call: decide = routine and supported enough, go ahead; test = one important uncertainty remains, run the smallest test first (fill test); defer = it does not need deciding now (revisit_if says when it will); ask = it hinges on the user's values or a permission they have not given.
+door: two-way if cheap to undo, one-way if costly or hard to undo.
+displaces: what current work or attention this delays, in one short line ("" if nothing real).
+revisit_if: the specific trigger that should reopen this decision, one short line.
+rule: if this call would settle similar situations in future, one if-then rule for the user to approve ("If ..., then ..."); else "". Never restate a standing rule that already exists.
 title: 3-8 words.`
     case 'unstick':
       return head + `STEP: The user marked the step "${node.data.targetTitle}" as stuck or not understood.

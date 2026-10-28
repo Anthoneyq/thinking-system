@@ -52,7 +52,7 @@ This plugin ships a small local app. It runs each thinking step through the user
      Use `answer <run-id> --skip` only when the user says to let it decide. Each `watch` returns at the next question or at the end, so repeat this step as needed.
 
      If `answer` prints `NEEDS A LITTLE MORE` (exit 3), Jev could not use part of the reply. Show the user which questions it named, relay their next reply with `answer` again, or use `answer <run-id> --as-is` if they want to keep what they said. Start `watch` only after an answer goes through.
-   - **`DONE` (exit 0).** The output ends with the decision record. Give the user the recommendation, the next action and its owner, and what is still uncertain, in a few lines, and point to the record file. Do not re-argue the decision; if you disagree with something, say so once, briefly.
+   - **`DONE` (exit 0).** The output ends with the decision record. Give the user the recommendation, its call (decide / test first / defer / your call) and revisit trigger, the next action and its owner, and what is still uncertain, in a few lines, and point to the record file. If the record proposes a rule, show it and ask once whether to save it; only on a yes, run `node <plugin folder>/bin/think.mjs rule "<rule text>"`. Do not re-argue the decision; if you disagree with something, say so once, briefly.
 
 ## If something goes wrong
 
@@ -60,4 +60,4 @@ This plugin ships a small local app. It runs each thinking step through the user
 - A step failed: the user can open that box on the map and press Try again.
 - Port 4477 taken by something else: rerun with `THINK_PORT=4478` in front of the command.
 
-Run records are saved in `~/Thinking System/runs/` (or the `runsDir` set in `~/.thinking-system/config.json`). Each holds `record.md`, `run.json` and any Excalidraw export.
+Run records are saved in `~/Thinking System/runs/` (or the `runsDir` set in `~/.thinking-system/config.json`). Each holds `record.md`, `run.json` and any Excalidraw export. Approved standing rules live in `~/.thinking-system/rules.md` (or `rulesFile` in config.json); every run applies them.

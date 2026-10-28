@@ -8,7 +8,7 @@ import { JEV_AVAILABLE } from './jev.js'
 import { METHODS } from './methods.js'
 import { toExcalidraw } from './excalidraw.js'
 import { layout } from '../shared/layout.js'
-import { writeRunFile, RUNS_DIR } from './store.js'
+import { writeRunFile, RUNS_DIR, RULES_FILE, readRules, addRule } from './store.js'
 
 const PORT = Number(process.env.THINK_PORT || 4477)
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -45,6 +45,13 @@ createServer(async (req, res) => {
       if (what === 'health') return json(res, 200, { ok: true, app: 'thinking-system', version: VERSION, runsDir: RUNS_DIR })
       if (what === 'shutdown' && req.method === 'POST') { json(res, 200, { ok: true }); return setTimeout(() => process.exit(0), 50) }
       if (what === 'meta') return json(res, 200, { models: MODELS, jev: JEV_AVAILABLE, methods: METHODS.map(({ id, name, when }) => ({ id, name, when })) })
+      if (what === 'rules' && req.method === 'GET') return json(res, 200, { file: RULES_FILE, rules: readRules() })
+      if (what === 'rules' && req.method === 'POST') {
+        const b = await body(req)
+        if (!b.text?.trim()) return json(res, 400, { error: 'Empty rule' })
+        addRule(b.text, b.from || 'manual')
+        return json(res, 200, { ok: true, file: RULES_FILE })
+      }
       if (what === 'runs' && !id && req.method === 'GET') return json(res, 200, engine.listRuns())
       if (what === 'runs' && !id && req.method === 'POST') {
         const b = await body(req)

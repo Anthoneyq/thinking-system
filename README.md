@@ -38,12 +38,14 @@ From a terminal: `node <plugin folder>/bin/think.mjs "your thought"` (`--effort 
 
 On the map, any box can be marked **Stuck / don't get this** (it explains plainly and treats the blocker as a constraint), taken **a level deeper** (a full sub-map), or **redone**. Correcting something it inferred redoes everything after it.
 
+Every decision is tagged **Decide**, **Test first**, **Defer** or **Your call**, says whether it is easy or hard to undo, what it displaces, and what should reopen it. When a call would settle similar cases, it offers an if-then rule; click **Save as standing rule** (or say yes in chat) and every later run applies it instead of asking again. Rules live in `~/.thinking-system/rules.md` (or `{"rulesFile": "..."}` in config.json); edit or delete lines freely. The skeptic step also lists claims that trace to nothing you said, gave or it looked up: another model agreeing does not count as evidence.
+
 A normal run is about 15 model calls and 3-6 minutes; on Sonnet that is roughly $0.50-0.80 of usage on your account.
 
 ## How it works
 
 - `server/engine.js`: run state, scheduler and the loop (frame, branch, come together, grow, ask, review, decide).
-- `server/prompts.js`: the rules, step prompts and strict JSON schemas. `server/methods.js`: the 17 thinking methods it chooses from.
+- `server/prompts.js`: the rules, step prompts and strict JSON schemas. `server/methods.js`: the 20 thinking methods it chooses from.
 - `server/jev.js`: the Jev judgments (method picks, the gate, question weighing, reply checks).
 - `server/models.js`: calls `claude -p` lean (no tools, MCP or settings), or Codex, or a dry run.
 - `src/`: React + React Flow. Map view (radial, live) and Steps view.

@@ -10,7 +10,10 @@ export function recordMarkdown(run) {
     `## Recommendation`, d.recommendation, '',
     `**Goal served:** ${d.goal_served}`, '',
     `**Next action:** ${d.next_action.what} (owner: ${d.next_action.owner}, when: ${d.next_action.when})`, '',
+    d.call ? `**Call:** ${d.call} - ${d.door} door${d.displaces ? ` - displaces: ${d.displaces}` : ''}\n` : '',
     d.test ? `**Smallest test:** ${d.test}\n` : '',
+    d.revisit_if ? `**Revisit if:** ${d.revisit_if}\n` : '',
+    d.rule ? `**Proposed rule (not approved):** ${d.rule}\n` : '',
     `## Why`, bullets(d.reasons), '',
     `## Tradeoffs`, bullets(d.tradeoffs), '',
     `## Cut`, bullets(d.cuts.map(c => `${c.what} - ${c.why}`)), '',
@@ -23,6 +26,7 @@ export function recordMarkdown(run) {
   if (run.corrections.length) lines.push('## Your corrections', bullets(run.corrections.map(c => `${c.action}: ${c.original}${c.text ? ' -> ' + c.text : ''}`)), '')
   if (narrow) lines.push('## Every option considered', bullets(narrow.all.map(o => `${o.title}: ${o.detail}`)), '')
   if (review) lines.push('## Skeptic objections', bullets(review.objections.map(o => `[${o.severity}] ${o.text} Fix: ${o.fix}`)), '')
+  if (review?.unsupported?.length) lines.push('## Unsupported claims', bullets(review.unsupported), '')
   lines.push('## Methods used', bullets(all.filter(n => n.kind === 'method').map(n => `${n.title}: ${n.data.focus}`)), '',
     '## Original thought', '```', run.input, '```', '')
   return lines.join('\n')

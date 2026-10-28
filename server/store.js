@@ -6,6 +6,14 @@ import { homedir } from 'node:os'
 export const config = (() => { try { return JSON.parse(readFileSync(join(homedir(), '.thinking-system', 'config.json'), 'utf8')) } catch { return {} } })()
 export const RUNS_DIR = process.env.THINK_RUNS_DIR || config.runsDir || join(homedir(), 'Thinking System', 'runs')
 
+// Standing rules the user approved: if-then calls decided once and reused, so the same choice is not asked again.
+export const RULES_FILE = process.env.THINK_RULES_FILE || config.rulesFile || join(homedir(), '.thinking-system', 'rules.md')
+export const readRules = () => { try { return readFileSync(RULES_FILE, 'utf8').split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2)) } catch { return [] } }
+export function addRule(text, from) {
+  const head = existsSync(RULES_FILE) ? '' : '# Standing rules\n\nApproved if-then rules the Thinking System applies when they fit. Edit or delete freely.\n\n'
+  writeFileSync(RULES_FILE, (existsSync(RULES_FILE) ? readFileSync(RULES_FILE, 'utf8') : head) + `- ${text.replace(/\s+/g, ' ').trim()} (from ${from})\n`)
+}
+
 const timers = new Map()
 
 export const runDir = run => join(RUNS_DIR, run.id)

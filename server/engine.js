@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { callModel, modelById, resolveModel } from './models.js'
 import { SCHEMAS, SYSTEM, stepPrompt } from './prompts.js'
 import { methodById } from './methods.js'
-import { loadRuns, saveRun, writeRunFile } from './store.js'
+import { loadRuns, saveRun, writeRunFile, readRules } from './store.js'
 import { recordMarkdown } from './record.js'
 import * as jev from './jev.js'
 
@@ -106,6 +106,8 @@ function context(run, scope) {
       `ORIGINAL THOUGHT (for context):\n${run.input.slice(0, 2000)}`)
     if (rootFrame) parts.push(`OVERALL GOAL: ${rootFrame.out.goal.text} (${rootFrame.out.goal.source})`)
   }
+  const rules = readRules()
+  if (rules.length) parts.push('STANDING RULES THE USER APPROVED (apply when one fits instead of re-deciding or re-asking; say which you applied):\n' + list(rules, r => `- ${r}`))
   if (run.corrections.length) parts.push('CORRECTIONS FROM THE USER (these override any inference):\n' +
     list(run.corrections, c => c.action === 'reject' ? `- NOT TRUE: ${c.original}` : c.action === 'edit' ? `- Instead of "${c.original}": ${c.text}` : `- CONFIRMED: ${c.original}`))
   if (run.constraints.length) parts.push('CONSTRAINTS THE USER FLAGGED:\n' + list(run.constraints, c => `- ${c.text}`))

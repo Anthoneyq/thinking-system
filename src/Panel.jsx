@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { KIND_LABEL } from './api.js'
+import { KIND_LABEL, api } from './api.js'
 
 const latest = (run, scope, kind) => run.order.map(i => run.nodes[i]).filter(n => n.scope === scope && n.kind === kind && n.status === 'done').at(-1)
 
@@ -26,7 +26,7 @@ function Overview({ run, scope, act, setSel }) {
           <strong>Waiting for you</strong> {waiting[0].title}: answer to continue, or let it decide.
         </button>
       )}
-      {decide && <Decision o={decide.out} />}
+      {decide && <Decision o={decide.out} runId={run.id} />}
       <Trail run={run} scope={scope} setSel={setSel} />
       {frame ? <Frame run={run} frame={frame} act={act} /> : <p className="sub">Framing your thought...</p>}
       <p className="foot sub">Click any box to see its work, mark it stuck, go a level deeper, or redo it.</p>
@@ -115,10 +115,13 @@ function Frame({ run, frame, act }) {
 
 const Source = ({ s }) => <span className={'tag' + (s === 'stated' ? '' : ' dashed')}>{s}</span>
 
-function Decision({ o }) {
+const CALL_LABEL = { decide: 'Decide', test: 'Test first', defer: 'Defer', ask: 'Your call' }
+
+function Decision({ o, runId }) {
   return (
     <div className="decision">
       <span className="eyebrow">Decision</span>
+      {o.call && <p><span className="tag">{CALL_LABEL[o.call]}</span><span className="tag dashed">{o.door === 'one-way' ? 'hard to undo' : 'easy to undo'}</span></p>}
       <h2 className={o.recommendation.length > 160 ? 'long' : ''}>{o.recommendation}</h2>
       <div className="next">
         <span>Next action</span>
@@ -127,11 +130,27 @@ function Decision({ o }) {
       </div>
       <p><b>Goal served:</b> {o.goal_served}</p>
       {o.test && <p><b>Smallest test:</b> {o.test}</p>}
+      {o.revisit_if && <p><b>Revisit if:</b> {o.revisit_if}</p>}
+      {o.displaces && <p><b>Displaces:</b> {o.displaces}</p>}
+      {o.rule && <RuleOffer text={o.rule} runId={runId} />}
       <List title="Why" items={o.reasons} />
       <List title="Tradeoffs" items={o.tradeoffs} />
       <List title="Cut" items={o.cuts.map(c => <><b>{c.what}</b> - {c.why}</>)} />
       <List title="Still uncertain" items={o.uncertainty} />
       <List title="Would change the answer" items={o.would_change} />
+    </div>
+  )
+}
+
+// A proposed if-then rule only becomes standing once the user saves it.
+function RuleOffer({ text, runId }) {
+  const [saved, setSaved] = useState(null)
+  const save = () => api('rules', { text, from: runId }).then(r => setSaved(r.file), e => setSaved('Failed: ' + e.message))
+  return (
+    <div className="rule-offer">
+      <p><b>Rule to reuse?</b> {text}</p>
+      {saved ? <p className="sub">{saved.startsWith('Failed') ? saved : 'Saved. Future runs apply it.'}</p>
+        : <button type="button" className="btn" onClick={save}>Save as standing rule</button>}
     </div>
   )
 }
@@ -262,8 +281,9 @@ function Body({ run, n, act, setSel }) {
     case 'review': return <>
       <p>{o.summary}</p>
       <ul className="findings">{o.objections.map((x, i) => <li key={i} className={'sev-' + x.severity}><span className="tag">{x.severity}</span>{x.text}<div className="sub">Fix: {x.fix}</div></li>)}</ul>
+      <List title="Not backed by evidence" items={o.unsupported} />
     </>
-    case 'decide': return <Decision o={o} />
+    case 'decide': return <Decision o={o} runId={run.id} />
     case 'unstick': {
       const target = run.nodes[n.data.target]
       return <>

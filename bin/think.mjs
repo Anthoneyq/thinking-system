@@ -8,6 +8,7 @@
 //   --no-open             don't open the browser
 // think answer <run-id> "your answer"   answer the questions it is waiting on (--skip to let it decide, --as-is to keep a reply Jev queried)
 // think watch <run-id>                  keep following a run after a question
+// think rule "If ..., then ..."         save an approved standing rule; every later run applies it
 // Starts the local app if needed (http://localhost:4477), starts a run, and opens the live map.
 import { readFileSync, existsSync, openSync, mkdirSync, realpathSync } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -24,6 +25,17 @@ const bool = name => { const i = args.indexOf(name); return i >= 0 ? !!args.spli
 const model = flag('--model'), effort = flag('--effort')
 const noJev = bool('--no-jev')
 const handsOff = bool('--hands-off'), wait = bool('--wait'), noOpen = bool('--no-open') || !!process.env.THINK_NO_OPEN
+
+// Save a standing rule the user approved.
+if (args[0] === 'rule') {
+  const text = args.slice(1).join(' ').trim()
+  const res = await fetch(`${BASE}/api/rules`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, from: 'chat' }) }).catch(() => null)
+  if (!res) { console.error('The app is not running. Start a run first, or add the line to rules.md by hand.'); process.exit(1) }
+  const out = await res.json()
+  if (!res.ok) { console.error(out.error); process.exit(1) }
+  console.log(`Saved to ${out.file}`)
+  process.exit(0)
+}
 
 // Answer from the chat instead of the browser.
 if (args[0] === 'answer') {

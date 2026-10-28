@@ -94,7 +94,7 @@ async function fake(kind, prompt) {
     case "research":
       return { summary: "Sample research.", findings: [{ text: "Sample fact", source: "" }], verified: false };
     case "review":
-      return { summary: "One serious objection.", objections: [{ text: "Sample objection", severity: "serious", fix: "Sample fix" }], fatal: false };
+      return { summary: "One serious objection.", unsupported: ["Sample claim with no source"], objections: [{ text: "Sample objection", severity: "serious", fix: "Sample fix" }], fatal: false };
     case "decide":
       return {
         title: "Sample decision",
@@ -106,8 +106,13 @@ async function fake(kind, prompt) {
         cuts: [{ what: "Extra step", why: "Not needed" }],
         uncertainty: ["Sample"],
         would_change: ["Sample"],
+        call: "decide",
+        door: "two-way",
+        displaces: "Sample: delays the current project a day",
+        revisit_if: "Sample: option A misses a requirement",
         next_action: { what: "Do the first step", owner: "You", when: "Today" },
-        test: ""
+        test: "",
+        rule: "If a sample option passes the requirements and is cheap to undo, then pick it and move on."
       };
     case "unstick":
       return { summary: "Plain explanation.", plain: "This step just lists choices; nothing is decided yet.", blocker: "The step used jargon", constraint: "Use plain words", suggestion: "rerun" };
@@ -304,6 +309,24 @@ const METHODS = [
     how: "Is this a one-way or two-way door? Reversible and cheap means decide fast and test; irreversible and costly means slow down and gather evidence."
   },
   {
+    id: "satisficing",
+    name: "Good enough",
+    when: "Options keep multiplying, or searching longer is unlikely to find much better.",
+    how: "Write the few requirements a satisfactory answer must meet. Drop options that fail any. Take the first that passes, preferring the one cheapest to change later. Stop searching."
+  },
+  {
+    id: "value-of-info",
+    name: "Is more research worth it",
+    when: "Tempted to research, compare or ask more before deciding.",
+    how: "For each open question, name the finding that would change the recommendation. If no realistic finding would, stop and decide. Otherwise look up only that."
+  },
+  {
+    id: "opportunity-cost",
+    name: "Opportunity cost",
+    when: "Adding a feature, tool, project or idea on top of existing work.",
+    how: "Name what this displaces: the current work it delays, the attention it takes, the upkeep it adds. Keep the existing tool or plan unless the gain clearly beats the switching cost."
+  },
+  {
     id: "small-test",
     name: "Smallest test",
     when: "The answer depends on evidence nobody has yet.",
@@ -400,6 +423,7 @@ const SCHEMAS = {
   }),
   review: obj({
     summary: str,
+    unsupported: arr(str),
     objections: arr(obj({ text: str, severity: oneOf("fatal", "serious", "minor"), fix: str })),
     fatal: bool
   }),
@@ -413,8 +437,13 @@ const SCHEMAS = {
     cuts: arr(obj({ what: str, why: str })),
     uncertainty: arr(str),
     would_change: arr(str),
+    call: oneOf("decide", "test", "defer", "ask"),
+    door: oneOf("one-way", "two-way"),
+    displaces: str,
+    revisit_if: str,
     next_action: obj({ what: str, owner: str, when: str }),
-    test: str
+    test: str,
+    rule: str
   }),
   unstick: obj({
     summary: str,
@@ -434,6 +463,8 @@ Rules:
 - Hard constraints eliminate options; they are never averaged away. Do not invent numeric precision; confidence names its basis.
 - Plain words, short sentences. No filler, no hype. Each item says one thing once.
 - Never invent facts about real people, companies, prices or results. If you do not know, it is an unknown.
+- Another model agreeing is not evidence. A claim is supported only when it traces to what the user stated, given evidence or research.
+- Match care to reversibility: cheap, reversible choices get decided fast; costly or hard-to-undo ones get scrutiny.
 Return only the JSON the schema asks for.`;
 const methodMenu = METHODS.map((m) => `- ${m.id}: ${m.name}. Use when: ${m.when}`).join("\n");
 const EFFORT_NOTE = {
@@ -473,7 +504,7 @@ Report findings (mark each evidence / inference / assumption), options this meth
 2. Show everything: collect every distinct option surfaced so far into "all" (merge duplicates, short ids o1, o2...; "from" = the method ids exactly as written in the method results, e.g. ["small-test", "algorithm"]). Pick the top 3 or fewer that best serve the goal within the constraints, each with why. If parts combine into something better, describe it in "combine"; else "".
 3. Gate. enough = true when further work is unlikely to change the next action. Otherwise choose next:
    develop = grow the top options further (what each takes, risks, tests);
-   research = facts can be looked up (max 3 queries);
+   research = facts can be looked up (max 3 queries; each "why" names the finding that would change the recommendation, otherwise do not research);
    more = different thinking methods are needed;
    ask = the choice now depends on the user's preferences or facts only they know. Ask them, offering the top options as answer choices where natural.
 Growth rounds left: ${opts.loopsLeft}. If 0, do not choose develop, research or more.${opts.loopsLeft > 0 && opts.pass === 1 ? " This is the first pass: prefer develop unless the answer is already obvious." : ""}
@@ -502,9 +533,15 @@ Why it matters: ${node.data.why}
 ${opts.web ? "Use web search and fetch. Cite the source URL for each finding." : 'You cannot browse. Answer from what you reliably know, set source to "" and verified = false.'}
 Report only facts relevant to the decision.`;
     case "review":
-      return head + `STEP: Adversarial review, one pass. Attack the leading direction as a sharp skeptic would. List real objections only, each with severity and a fix. fatal = true only if the direction should not go ahead as it stands.`;
+      return head + `STEP: Adversarial review, one pass. Attack the leading direction as a sharp skeptic would. List real objections only, each with severity and a fix. fatal = true only if the direction should not go ahead as it stands.
+unsupported: claims the direction rests on that do not trace to what the user stated, given evidence or research (agreement between steps does not count). Empty if all are supported.`;
     case "decide":
       return head + `STEP: Decision record. recommendation: the call itself in at most two short sentences (under 40 words); details go in reasons. Then the goal it serves, key reasons, tradeoffs, what to cut and why, what stays uncertain, what would change the answer, the single next action (next_action.what: one short sentence, under 25 words) with owner (the user, or "AI" if an AI can do it) and when, and the smallest test if one applies (else "").
+call: decide = routine and supported enough, go ahead; test = one important uncertainty remains, run the smallest test first (fill test); defer = it does not need deciding now (revisit_if says when it will); ask = it hinges on the user's values or a permission they have not given.
+door: two-way if cheap to undo, one-way if costly or hard to undo.
+displaces: what current work or attention this delays, in one short line ("" if nothing real).
+revisit_if: the specific trigger that should reopen this decision, one short line.
+rule: if this call would settle similar situations in future, one if-then rule for the user to approve ("If ..., then ..."); else "". Never restate a standing rule that already exists.
 title: 3-8 words.`;
     case "unstick":
       return head + `STEP: The user marked the step "${node.data.targetTitle}" as stuck or not understood.
@@ -523,6 +560,19 @@ const config = (() => {
   }
 })();
 const RUNS_DIR = process.env.THINK_RUNS_DIR || config.runsDir || join(homedir(), "Thinking System", "runs");
+const RULES_FILE = process.env.THINK_RULES_FILE || config.rulesFile || join(homedir(), ".thinking-system", "rules.md");
+const readRules = () => {
+  try {
+    return readFileSync(RULES_FILE, "utf8").split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2));
+  } catch {
+    return [];
+  }
+};
+function addRule(text, from) {
+  const head = existsSync(RULES_FILE) ? "" : "# Standing rules\n\nApproved if-then rules the Thinking System applies when they fit. Edit or delete freely.\n\n";
+  writeFileSync(RULES_FILE, (existsSync(RULES_FILE) ? readFileSync(RULES_FILE, "utf8") : head) + `- ${text.replace(/\s+/g, " ").trim()} (from ${from})
+`);
+}
 const timers = /* @__PURE__ */ new Map();
 const runDir = (run2) => join(RUNS_DIR, run2.id);
 function loadRuns() {
@@ -568,7 +618,13 @@ function recordMarkdown(run2) {
     "",
     `**Next action:** ${d.next_action.what} (owner: ${d.next_action.owner}, when: ${d.next_action.when})`,
     "",
+    d.call ? `**Call:** ${d.call} - ${d.door} door${d.displaces ? ` - displaces: ${d.displaces}` : ""}
+` : "",
     d.test ? `**Smallest test:** ${d.test}
+` : "",
+    d.revisit_if ? `**Revisit if:** ${d.revisit_if}
+` : "",
+    d.rule ? `**Proposed rule (not approved):** ${d.rule}
 ` : "",
     `## Why`,
     bullets(d.reasons),
@@ -600,6 +656,7 @@ function recordMarkdown(run2) {
   if (run2.corrections.length) lines.push("## Your corrections", bullets(run2.corrections.map((c) => `${c.action}: ${c.original}${c.text ? " -> " + c.text : ""}`)), "");
   if (narrow) lines.push("## Every option considered", bullets(narrow.all.map((o) => `${o.title}: ${o.detail}`)), "");
   if (review) lines.push("## Skeptic objections", bullets(review.objections.map((o) => `[${o.severity}] ${o.text} Fix: ${o.fix}`)), "");
+  if (review?.unsupported?.length) lines.push("## Unsupported claims", bullets(review.unsupported), "");
   lines.push(
     "## Methods used",
     bullets(all.filter((n) => n.kind === "method").map((n) => `${n.title}: ${n.data.focus}`)),
@@ -819,6 +876,8 @@ ${run2.input.slice(0, 2e3)}`
     );
     if (rootFrame) parts.push(`OVERALL GOAL: ${rootFrame.out.goal.text} (${rootFrame.out.goal.source})`);
   }
+  const rules = readRules();
+  if (rules.length) parts.push("STANDING RULES THE USER APPROVED (apply when one fits instead of re-deciding or re-asking; say which you applied):\n" + list$1(rules, (r) => `- ${r}`));
   if (run2.corrections.length) parts.push("CORRECTIONS FROM THE USER (these override any inference):\n" + list$1(run2.corrections, (c) => c.action === "reject" ? `- NOT TRUE: ${c.original}` : c.action === "edit" ? `- Instead of "${c.original}": ${c.text}` : `- CONFIRMED: ${c.original}`));
   if (run2.constraints.length) parts.push("CONSTRAINTS THE USER FLAGGED:\n" + list$1(run2.constraints, (c) => `- ${c.text}`));
   const answers = inScope(run2, scope).filter((n) => n.kind === "ask" && n.status === "done");
@@ -4597,6 +4656,13 @@ createServer(async (req, res) => {
         return setTimeout(() => process.exit(0), 50);
       }
       if (what === "meta") return json(res, 200, { models: MODELS, jev: JEV_AVAILABLE, methods: METHODS.map(({ id: id2, name, when }) => ({ id: id2, name, when })) });
+      if (what === "rules" && req.method === "GET") return json(res, 200, { file: RULES_FILE, rules: readRules() });
+      if (what === "rules" && req.method === "POST") {
+        const b = await body(req);
+        if (!b.text?.trim()) return json(res, 400, { error: "Empty rule" });
+        addRule(b.text, b.from || "manual");
+        return json(res, 200, { ok: true, file: RULES_FILE });
+      }
       if (what === "runs" && !id && req.method === "GET") return json(res, 200, listRuns());
       if (what === "runs" && !id && req.method === "POST") {
         const b = await body(req);

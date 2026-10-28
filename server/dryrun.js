@@ -61,11 +61,12 @@ export async function fake(kind, prompt) {
       gaps: [], next: 'commit', questions: [], research: [], stop_reason: 'More analysis would not change the next action.',
     }
     case 'research': return { summary: 'Sample research.', findings: [{ text: 'Sample fact', source: '' }], verified: false }
-    case 'review': return { summary: 'One serious objection.', objections: [{ text: 'Sample objection', severity: 'serious', fix: 'Sample fix' }], fatal: false }
+    case 'review': return { summary: 'One serious objection.', unsupported: ['Sample claim with no source'], objections: [{ text: 'Sample objection', severity: 'serious', fix: 'Sample fix' }], fatal: false }
     case 'decide': return {
       title: 'Sample decision', summary: 'Go with Option A.', recommendation: 'Go with Option A and keep the cheap part of B.',
       goal_served: 'Sample goal', reasons: ['Sample reason'], tradeoffs: ['Sample tradeoff'], cuts: [{ what: 'Extra step', why: 'Not needed' }],
-      uncertainty: ['Sample'], would_change: ['Sample'], next_action: { what: 'Do the first step', owner: 'You', when: 'Today' }, test: '',
+      uncertainty: ['Sample'], would_change: ['Sample'], call: 'decide', door: 'two-way', displaces: 'Sample: delays the current project a day', revisit_if: 'Sample: option A misses a requirement',
+      next_action: { what: 'Do the first step', owner: 'You', when: 'Today' }, test: '', rule: 'If a sample option passes the requirements and is cheap to undo, then pick it and move on.',
     }
     case 'unstick': return { summary: 'Plain explanation.', plain: 'This step just lists choices; nothing is decided yet.', blocker: 'The step used jargon', constraint: 'Use plain words', suggestion: 'rerun' }
   }
