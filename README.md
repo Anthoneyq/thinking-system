@@ -17,10 +17,10 @@ Answer `y` to add the marketplace, then pick a scope. Needs Node 18+ and Claude 
 In Claude Code:
 
 ```
-/think should I raise prices or add a cheaper tier?
+/systems
 ```
 
-It runs only when you type `/think` (if another `/think` already exists, use `/thinking-system:think`). Claude writes up the thought, adding any facts from your conversation. It opens the live map in your browser, brings each question back into the chat, and returns the decision when it finishes. Answer on the map or in the chat, or say "you decide".
+Then talk it all out, as messy as you like, and say "go". Or give the thought straight away: `/systems should I raise prices or add a cheaper tier?`. It runs only when you type `/systems` (if another `/systems` already exists, use `/thinking-system:systems`), and it stays on for the rest of the conversation, so each new thing you bring up gets its own map. Claude writes up the thought, adding any facts from your conversation. It opens the live map in your browser, brings each question back into the chat, and returns the decision when it finishes. Answer on the map or in the chat, or say "you decide".
 
 ## Faster decisions with Jev (optional)
 

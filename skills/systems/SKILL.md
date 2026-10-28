@@ -1,21 +1,26 @@
 ---
-name: think
-description: Think a decision, plan or messy goal through on a live branching map in the browser. It asks only what changes the answer and returns a decision record with one next action. Runs only when the user types /think.
-argument-hint: [what you're thinking about]
+name: systems
+description: Turns the conversation into the Thinking System. The user talks freely about what is on their mind; each decision, plan or messy goal runs on a live branching map in the browser that asks only what changes the answer and returns a decision with one next action. Runs only when the user types /systems.
+argument-hint: [anything on your mind, or nothing to just start talking]
 disable-model-invocation: true
 ---
 
-# Think it through
+# Systems mode
 
-The user's thought: $ARGUMENTS
+What the user said with the command: $ARGUMENTS
 
-If that is empty, ask in one line what they want to think through, then continue.
+From now until the user says to stop, this conversation runs through the Thinking System.
+
+- **If they gave nothing**, reply in one line inviting them to talk it all out, as messy as they like, and to say "go" when they want the map. Then listen. While they talk, don't analyse, advise or ask a string of questions. At most, ask one short question if you truly can't tell what they mean. When they say "go", or have clearly finished, run it.
+- **If they gave a thought**, run it now.
+- **If they bring up several separate decisions**, run them as one thought when they are tangled together, because the map sorts them. Otherwise, ask which one first in one line, then run that one.
+- **After a run finishes**, stay in this mode. The next thing they bring up gets its own run.
 
 This plugin ships a small local app. It runs each thinking step through the user's own `claude` CLI, so it uses their Claude login and nothing is hosted. The map opens at http://localhost:4477.
 
 ## Run it
 
-1. **Write the thought to a file.** Use the user's own words first. If the conversation holds facts that matter (constraints, numbers, files they shared), add them under a heading `Context from our conversation:`. Never add guesses as facts; the app separates what was stated from what it infers, and that only works if the input is honest. Save it to a temp file, e.g. `/tmp/think-input.md`.
+1. **Write the thought to a file.** Use the user's own words first: everything they said for this thought, not your summary of it. If the conversation holds facts that matter (constraints, numbers, files they shared), add them under a heading `Context from our conversation:`. Never add guesses as facts; the app separates what was stated from what it infers, and that only works if the input is honest. Save it to a temp file, e.g. `/tmp/think-input.md`.
 
 2. **Start the run in the background** with the Bash tool (`run_in_background: true`), from this skill's base directory:
 
