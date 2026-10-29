@@ -13,7 +13,7 @@
 //   status (default) | scan | process [--only <file text>] | next | answer "<text>" | file <branch-id> | skip
 //   | crosscheck | ask "<question>" | refile | open
 // Starts the local app if needed (http://localhost:4477), starts a run, and opens the live map.
-import { readFileSync, existsSync, openSync, mkdirSync, realpathSync } from 'node:fs'
+import { readFileSync, existsSync, openSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, join, basename } from 'node:path'
 import { homedir } from 'node:os'
@@ -61,8 +61,10 @@ if (args[0] === 'answer') {
   process.exit(0)
 }
 
-const parts = args.map(a => existsSync(a) ? `--- ${basename(a)} ---\n${readFileSync(a, 'utf8')}` : a)
-if (!process.stdin.isTTY) { try { const piped = readFileSync(0, 'utf8').trim(); if (piped) parts.push(piped) } catch {} }
+// Words that are file paths are read in (a folder named like a word, e.g. ~/Library, is not). Library commands take no input.
+const isFile = a => { try { return statSync(a).isFile() } catch { return false } }
+const parts = args[0] === 'library' ? [] : args.map(a => isFile(a) ? `--- ${basename(a)} ---\n${readFileSync(a, 'utf8')}` : a)
+if (args[0] !== 'library' && !process.stdin.isTTY) { try { const piped = readFileSync(0, 'utf8').trim(); if (piped) parts.push(piped) } catch {} }
 const input = parts.join('\n\n').trim()
 
 const get = path => fetch(BASE + path).then(r => r.json())
