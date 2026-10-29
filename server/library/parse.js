@@ -28,7 +28,7 @@ function vtt(text) {
   return turns
 }
 
-// "Dan L. Kessinger, HCI, WRT", "DanLKessingerHCIWRT" and "Anthoney Q., CSCS" all become a first name.
+// "Jane L. Doe, PE, CFM", "JaneLDoePECFM" and "Sam Q., MBA" all become a first name.
 export const person = s => s.trim().split(/[,\s]/)[0].replace(/^([A-Z][a-z]+)[A-Z].*$/, '$1')
 
 // Teams Word export: "Name   0:03 words" per line.

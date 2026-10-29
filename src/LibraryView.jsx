@@ -374,7 +374,7 @@ function Find({ v, id }) {
   return (
     <div className="lib-find">
       <div className="lib-q-bar">
-        <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && find()} placeholder="Where did we talk about… (e.g. ceiling, fee schedule, Southridge)" />
+        <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && find()} placeholder="Where did we talk about… (e.g. ceiling, fee schedule, a client name)" />
         <button className="btn" onClick={find}>Find</button>
         <button className="primary" disabled={!q.trim() || busy} onClick={askIt}>{busy ? 'Reading…' : 'Ask'}</button>
       </div>
