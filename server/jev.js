@@ -23,6 +23,7 @@ async function ask(state, questions) {
   }
 }
 
+export const jevAsk = ask
 const meta = r => ({ ms: r.ms, model: r.model })
 const shortThought = text => text.length > 4000 ? text.slice(0, 4000) + '...' : text
 

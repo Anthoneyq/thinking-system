@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, go } from './api.js'
 import RunView from './RunView.jsx'
+import LibraryView from './LibraryView.jsx'
 
 export default function App() {
   if (import.meta.env.VITE_REPLAY) return <Replay />
@@ -22,6 +23,8 @@ function Live() {
     return () => removeEventListener('popstate', on)
   }, [])
   const m = path.match(/^\/run\/([^/]+)/)
+  const l = path.match(/^\/library\/([^/]+)/)
+  if (l) return <LibraryView key={l[1]} id={decodeURIComponent(l[1])} />
   return m ? <RunView key={m[1]} id={decodeURIComponent(m[1])} /> : <Home />
 }
 
@@ -34,6 +37,7 @@ const EFFORTS = [
 function Home() {
   const [meta, setMeta] = useState(null)
   const [runs, setRuns] = useState([])
+  const [libs, setLibs] = useState([])
   const [input, setInput] = useState('')
   const [model, setModel] = useState(() => { try { return localStorage.getItem('think.model') || 'claude-sonnet-5-5' } catch { return 'claude-sonnet-5-5' } })
   const [effort, setEffort] = useState('normal')
@@ -42,7 +46,7 @@ function Home() {
   const [err, setErr] = useState('')
   const [drag, setDrag] = useState(false)
 
-  useEffect(() => { api('meta').then(setMeta); api('runs').then(setRuns) }, [])
+  useEffect(() => { api('meta').then(setMeta); api('runs').then(setRuns); api('libraries').then(setLibs).catch(() => {}) }, [])
 
   async function start() {
     if (!input.trim() || busy) return
@@ -95,6 +99,20 @@ function Home() {
         </div>
         {err && <p className="error-line">{err}</p>}
       </section>
+      {libs.length > 0 && (
+        <section className="recent">
+          <h2>Conversations</h2>
+          <ul>
+            {libs.map(l => (
+              <li key={l.id}><a href={'/library/' + l.id} onClick={e => { e.preventDefault(); go('/library/' + l.id) }}>
+                <span className="r-title">{l.name}</span>
+                {l.review + l.open > 0 && <span className="pill s-waiting">{l.review + l.open} need you</span>}
+                <span className="sub">{l.calls} calls · {l.items} items · {l.threads} topics</span>
+              </a></li>
+            ))}
+          </ul>
+        </section>
+      )}
       {runs.length > 0 && (
         <section className="recent">
           <h2>Earlier runs</h2>

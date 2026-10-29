@@ -63,11 +63,31 @@ Every decision is tagged **Decide**, **Test first**, **Defer** or **Your call**,
 
 A normal run is about 15 model calls and 3-6 minutes; on Sonnet that is roughly $0.50-0.80 of usage on your account.
 
+## Conversations mode: every call, filed (optional)
+
+Point it at a folder of recorded calls (Teams or Zoom `.vtt`, Teams Word `.docx`, `.md`, `.txt`) and it builds one record of the business:
+
+- **Reads each call** into items: decisions, open questions, assumptions, to-dos, ideas, facts and preferences, each with who said it, when, and the exact words. Each item carries its own context, so it still makes sense on its own months later. Exact duplicate files are skipped.
+- **Files each item on your business tree**, the SOPs within SOPs, one level at a time. With Jev, each level is a calibrated probability and the path's product is the confidence. Nothing is filed below **95%**: an item files at the deepest branch that clears the bar, and everything else waits for you. When Jev and Claude disagree, or one word is used two ways ("ceiling" the cost cap, "ceiling" the damage), it waits for you too. Your corrections are fed back as examples, so filing gets better.
+- **Ties the same topic together across calls** and says where it stands: decided, open, assumed, done, or **never settled** (talked about several ways, no decision; it lists each way).
+- **Asks what it still needs**, one question at a time, until there is nothing left. Alike filing checks come in one batch.
+- **Finds** where anything was said, split by the sense a word was used in, and answers questions from the record with sources.
+- **Cross-checks** (on demand, Opus): what was worked out in one part of the business that applies to another.
+
+Set it up in `~/.thinking-system/config.json`:
+
+```json
+{ "libraries": [{ "id": "acme", "name": "Acme Co", "sources": ["/path/to/call transcripts"], "dir": "/path/to/where the record lives" }] }
+```
+
+Put your tree in `<dir>/tree.json` (`{ "name": "Acme Co", "branches": [{ "id": "ops", "name": "Running a job", "desc": "...", "children": [...] }] }`); good descriptions make filing sharper. Then open http://localhost:4477/library/acme, or `/conversations` in Claude Code, or `think library acme status|scan|process|next|answer|ask|crosscheck`. The record is also written as `<dir>/INDEX.md`. Reading costs about $0.10 a call on Sonnet; filing with Jev is a fraction of a cent.
+
 ## How it works
 
 - `server/engine.js`: run state, scheduler and the loop (frame, branch, come together, grow, ask, review, decide).
 - `server/prompts.js`: the rules, step prompts and strict JSON schemas. `server/methods.js`: the 20 thinking methods it chooses from.
 - `server/jev.js`: the Jev judgments (method picks, the gate, question weighing, reply checks).
+- `server/library/`: Conversations mode (parse calls, read, file level by level, tie topics, questions, cross-check, Markdown record). `src/LibraryView.jsx`: the spider web and the questions panel.
 - `server/models.js`: calls `claude -p` lean (no tools, MCP or settings), or Codex, or a dry run.
 - `src/`: React + React Flow. Map view (radial, live) and Steps view.
 - `app/server.mjs` and `dist/` are built files, committed so the plugin runs without `npm install`. Rebuild with `npm install && npm run build`.

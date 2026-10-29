@@ -9,6 +9,9 @@
 // think answer <run-id> "your answer"   answer the questions it is waiting on (--skip to let it decide, --as-is to keep a reply Jev queried)
 // think watch <run-id>                  keep following a run after a question
 // think rule "If ..., then ..."         save an approved standing rule; every later run applies it
+// think library [id] [command]          Conversations mode (libraries are set in ~/.thinking-system/config.json):
+//   status (default) | scan | process [--only <file text>] | next | answer "<text>" | file <branch-id> | skip
+//   | crosscheck | ask "<question>" | refile | open
 // Starts the local app if needed (http://localhost:4477), starts a run, and opens the live map.
 import { readFileSync, existsSync, openSync, mkdirSync, realpathSync } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -76,6 +79,60 @@ if (!h) {
   spawn(process.execPath, [server], { cwd: ROOT, detached: true, stdio: ['ignore', log, log], env: process.env }).unref()
   for (let i = 0; i < 80 && !h; i++) { await sleep(100); h = await health() }
   if (!h) { console.error(`The app did not start. See ${join(logDir, 'server.log')}`); process.exit(1) }
+}
+
+// Conversations mode from the terminal or chat: the same record and questions as the page.
+if (args[0] === 'library') {
+  const libs = await get('/api/libraries')
+  const id = libs.find(l => l.id === args[1]) ? args[1] : libs[0]?.id
+  if (!id) { console.error('No libraries. Add one under "libraries" in ~/.thinking-system/config.json'); process.exit(1) }
+  const rest = args.slice(libs.find(l => l.id === args[1]) ? 2 : 1)
+  const cmd = rest[0] || 'status', text = rest.slice(1).join(' ').trim()
+  const post = (what, b = {}) => fetch(`${BASE}/api/library/${id}/${what}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) })
+    .then(async r => { const o = await r.json(); if (!r.ok) { console.error(o.error); process.exit(1) } return o.result })
+  const v = await get(`/api/library/${id}`)
+  const page = `${BASE}/library/${id}`
+  const c = v.counts
+  const show = q => {
+    if (!q) return console.log('Nothing needs you. Every topic is settled and every item is filed.')
+    console.log(`${v.questions.filter(x => x.now).length} matter now, ${v.questions.length} in all. Next (${q.id}):`)
+    if (q.kind === 'thread') {
+      console.log(`  [${q.status}] ${q.where}\n  ${q.q}\n  why: ${q.why}`)
+      if (q.ways?.length) console.log(`  ways it was talked about:\n${q.ways.map(w => '    - ' + w).join('\n')}`)
+      if (q.options?.length) console.log(`  options: ${q.options.join(' | ')}`)
+      console.log(`Answer with: think library ${id} answer "..."  (or skip)`)
+    } else if (q.kind === 'group') {
+      console.log(`  ${q.q}\n${q.items.map(i => `    - ${i.text} (${Math.round(i.conf * 100)}%)`).join('\n')}`)
+      console.log(`Confirm all with: think library ${id} answer yes  (or file <branch-id>, or skip)`)
+    } else {
+      console.log(`  Where does this belong? "${q.q}"\n  best guess: ${q.guessName} (${q.why})${q.alts.length ? `\n  others: ${q.alts.map(a => `${a.branch} ${a.name}`).join('; ')}` : ''}`)
+      console.log(`Answer with: think library ${id} answer yes | file <branch-id> | file none | skip`)
+    }
+  }
+  if (cmd === 'status') {
+    console.log(`${v.name}: ${c.calls} calls (${c.newCalls} unread), ${c.items} items, ${c.filed} filed, ${c.review} to check, ${c.threads} topics (${c.open} not settled). $${c.cost.toFixed(2)} spent.`)
+    if (v.job?.running) console.log(`Working: ${v.job.stage} ${v.job.done}/${v.job.total}. ${v.job.log.at(-1)?.text || ''}`)
+    console.log(`Record: ${v.dir}/INDEX.md\nMap: ${page}`)
+  } else if (cmd === 'scan') { const r = await post('scan'); console.log(`${r.added} new call(s). ${r.newCalls} unread in all. Read them with: think library ${id} process`) }
+  else if (cmd === 'process') { const only = rest.indexOf('--only') > 0 ? rest[rest.indexOf('--only') + 1] : undefined; await post('process', { only, model }); console.log(`Reading. Follow it on ${page} or with: think library ${id} status`) }
+  else if (cmd === 'refile') { const r = await post('refile'); console.log(`${r.filed} filed, ${r.review} to check.`) }
+  else if (cmd === 'crosscheck') { await post('crosscheck', { model }); console.log(`Cross-checking on Opus. Results on ${page} (Applies elsewhere) and in INDEX.md.`) }
+  else if (cmd === 'ask') { const r = await post('ask', { question: text }); console.log(r.answer); if (r.gaps?.length) console.log(`Not settled: ${r.gaps.join('; ')}`) }
+  else if (cmd === 'next') show(v.questions.find(x => x.now) || v.questions[0])
+  else if (['answer', 'file', 'skip'].includes(cmd)) {
+    const q = v.questions.find(x => x.now) || v.questions[0]
+    if (!q) { show(null); process.exit(0) }
+    if (cmd === 'skip') await post('answer', { qid: q.id, skip: true, items: q.items?.map(i => i.id) })
+    else if (q.kind === 'thread') { if (!text) { console.error('Write the answer.'); process.exit(1) } await post('answer', { qid: q.id, text }) }
+    else if (cmd === 'file') { const ids = q.kind === 'group' ? q.items.map(i => i.id) : [q.item]; for (const x of ids) await post('answer', { qid: 'i:' + x, branch: text }) }
+    else if (q.kind === 'group') await post('confirm', { items: q.items.map(i => i.id) })
+    else await post('answer', { qid: q.id, branch: q.guess })
+    console.log('Saved.')
+    const qs = (await get(`/api/library/${id}`)).questions
+    show(qs.find(x => x.now) || qs[0])
+  } else if (cmd === 'open') { spawn('open', [page], { stdio: 'ignore', detached: true }).unref(); console.log(page) }
+  else { console.error(`Unknown command "${cmd}".`); process.exit(1) }
+  process.exit(0)
 }
 
 // Pick up waiting on a run: skips the question already on screen, returns at the next one or the end.

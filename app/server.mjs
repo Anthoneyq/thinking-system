@@ -1,10 +1,11 @@
 import { createServer } from "node:http";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, mkdirSync } from "node:fs";
-import { join, dirname, extname } from "node:path";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, mkdirSync, statSync } from "node:fs";
+import { join, extname, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EventEmitter } from "node:events";
 import { spawnSync, spawn } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
+import { createHash } from "node:crypto";
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function fake(kind, prompt) {
   await wait(500 + Math.random() * 900);
@@ -353,124 +354,124 @@ const METHODS = [
 ];
 const METHOD_IDS = METHODS.map((m) => m.id);
 const methodById = (id) => METHODS.find((m) => m.id === id);
-const str = { type: "string" };
+const str$1 = { type: "string" };
 const bool = { type: "boolean" };
-const arr = (items) => ({ type: "array", items });
-const oneOf = (...values) => ({ type: "string", enum: values });
-const obj = (props) => ({ type: "object", properties: props, required: Object.keys(props), additionalProperties: false });
-const num = { type: "number" };
+const arr$1 = (items) => ({ type: "array", items });
+const oneOf$1 = (...values) => ({ type: "string", enum: values });
+const obj$1 = (props) => ({ type: "object", properties: props, required: Object.keys(props), additionalProperties: false });
+const num$1 = { type: "number" };
 const int = { type: "integer" };
-const confidence = obj({ level: oneOf("low", "medium", "high"), basis: str });
-const question = obj({ id: str, q: str, why: str, options: arr(str), blocking: bool });
-const SCHEMAS = {
-  frame: obj({
-    title: str,
-    summary: str,
-    question: str,
-    goal: obj({ text: str, source: oneOf("stated", "inferred", "unknown") }),
-    stated: arr(str),
-    inferred: arr(obj({ text: str, why: str })),
-    constraints: arr(obj({ text: str, source: oneOf("stated", "inferred"), hard: bool })),
-    evidence: arr(str),
-    unknowns: arr(obj({ text: str, why_it_matters: str, action: oneOf("ask", "research", "test", "decide", "ignore"), how: str })),
-    lenses: arr(str),
+const confidence = obj$1({ level: oneOf$1("low", "medium", "high"), basis: str$1 });
+const question = obj$1({ id: str$1, q: str$1, why: str$1, options: arr$1(str$1), blocking: bool });
+const SCHEMAS$1 = {
+  frame: obj$1({
+    title: str$1,
+    summary: str$1,
+    question: str$1,
+    goal: obj$1({ text: str$1, source: oneOf$1("stated", "inferred", "unknown") }),
+    stated: arr$1(str$1),
+    inferred: arr$1(obj$1({ text: str$1, why: str$1 })),
+    constraints: arr$1(obj$1({ text: str$1, source: oneOf$1("stated", "inferred"), hard: bool })),
+    evidence: arr$1(str$1),
+    unknowns: arr$1(obj$1({ text: str$1, why_it_matters: str$1, action: oneOf$1("ask", "research", "test", "decide", "ignore"), how: str$1 })),
+    lenses: arr$1(str$1),
     confidence,
-    questions: arr(question)
+    questions: arr$1(question)
   }),
-  route: obj({
-    summary: str,
+  route: obj$1({
+    summary: str$1,
     simple: bool,
-    plan: arr(obj({ method: oneOf(...METHOD_IDS), focus: str, why: str, checks: arr(str) }))
+    plan: arr$1(obj$1({ method: oneOf$1(...METHOD_IDS), focus: str$1, why: str$1, checks: arr$1(str$1) }))
   }),
-  method: obj({
-    summary: str,
-    findings: arr(obj({ text: str, kind: oneOf("evidence", "inference", "assumption") })),
-    options: arr(obj({ title: str, detail: str })),
-    cuts: arr(obj({ what: str, why: str })),
-    risks: arr(str),
-    unknowns: arr(str),
-    quadrant: obj({ x: str, y: str, items: arr(obj({ text: str, x_high: bool, y_high: bool, note: str })) }),
-    matrix: obj({ criteria: arr(obj({ name: str, weight: num })), rows: arr(obj({ option: str, scores: arr(num), total: num })) })
+  method: obj$1({
+    summary: str$1,
+    findings: arr$1(obj$1({ text: str$1, kind: oneOf$1("evidence", "inference", "assumption") })),
+    options: arr$1(obj$1({ title: str$1, detail: str$1 })),
+    cuts: arr$1(obj$1({ what: str$1, why: str$1 })),
+    risks: arr$1(str$1),
+    unknowns: arr$1(str$1),
+    quadrant: obj$1({ x: str$1, y: str$1, items: arr$1(obj$1({ text: str$1, x_high: bool, y_high: bool, note: str$1 })) }),
+    matrix: obj$1({ criteria: arr$1(obj$1({ name: str$1, weight: num$1 })), rows: arr$1(obj$1({ option: str$1, scores: arr$1(num$1), total: num$1 })) })
   }),
-  narrow: obj({
-    summary: str,
-    all: arr(obj({ id: str, title: str, detail: str, from: arr(str) })),
-    top: arr(obj({ id: str, why: str })),
-    combine: str
+  narrow: obj$1({
+    summary: str$1,
+    all: arr$1(obj$1({ id: str$1, title: str$1, detail: str$1, from: arr$1(str$1) })),
+    top: arr$1(obj$1({ id: str$1, why: str$1 })),
+    combine: str$1
   }),
-  converge: obj({
-    summary: str,
-    question: str,
-    changed: str,
-    all: arr(obj({ id: str, title: str, detail: str, from: arr(str) })),
-    top: arr(obj({ id: str, why: str })),
-    combine: str,
+  converge: obj$1({
+    summary: str$1,
+    question: str$1,
+    changed: str$1,
+    all: arr$1(obj$1({ id: str$1, title: str$1, detail: str$1, from: arr$1(str$1) })),
+    top: arr$1(obj$1({ id: str$1, why: str$1 })),
+    combine: str$1,
     enough: bool,
     confidence,
-    next: oneOf("commit", "ask", "develop", "research", "more"),
-    questions: arr(question),
-    research: arr(obj({ query: str, why: str })),
-    open_points: arr(obj({ id: str, text: str, raised_in: arr(str), times: int, action: oneOf("ask", "research", "test", "decide"), rank: int, unlocks: str })),
-    stop_reason: str
+    next: oneOf$1("commit", "ask", "develop", "research", "more"),
+    questions: arr$1(question),
+    research: arr$1(obj$1({ query: str$1, why: str$1 })),
+    open_points: arr$1(obj$1({ id: str$1, text: str$1, raised_in: arr$1(str$1), times: int, action: oneOf$1("ask", "research", "test", "decide"), rank: int, unlocks: str$1 })),
+    stop_reason: str$1
   }),
-  develop: obj({
-    summary: str,
-    practice: str,
-    fit: str,
-    takes: arr(str),
-    risks: arr(str),
-    test: str,
-    verdict: oneOf("strong", "possible", "weak"),
-    sub_options: arr(obj({ title: str, detail: str }))
+  develop: obj$1({
+    summary: str$1,
+    practice: str$1,
+    fit: str$1,
+    takes: arr$1(str$1),
+    risks: arr$1(str$1),
+    test: str$1,
+    verdict: oneOf$1("strong", "possible", "weak"),
+    sub_options: arr$1(obj$1({ title: str$1, detail: str$1 }))
   }),
-  assess: obj({
-    summary: str,
+  assess: obj$1({
+    summary: str$1,
     enough: bool,
     confidence,
-    gaps: arr(obj({ text: str, action: oneOf("ask", "research", "test", "decide") })),
-    next: oneOf("commit", "ask", "research", "more"),
-    questions: arr(question),
-    research: arr(obj({ query: str, why: str })),
-    stop_reason: str
+    gaps: arr$1(obj$1({ text: str$1, action: oneOf$1("ask", "research", "test", "decide") })),
+    next: oneOf$1("commit", "ask", "research", "more"),
+    questions: arr$1(question),
+    research: arr$1(obj$1({ query: str$1, why: str$1 })),
+    stop_reason: str$1
   }),
-  research: obj({
-    summary: str,
-    findings: arr(obj({ text: str, source: str })),
+  research: obj$1({
+    summary: str$1,
+    findings: arr$1(obj$1({ text: str$1, source: str$1 })),
     verified: bool
   }),
-  review: obj({
-    summary: str,
-    unsupported: arr(str),
-    objections: arr(obj({ text: str, severity: oneOf("fatal", "serious", "minor"), fix: str })),
+  review: obj$1({
+    summary: str$1,
+    unsupported: arr$1(str$1),
+    objections: arr$1(obj$1({ text: str$1, severity: oneOf$1("fatal", "serious", "minor"), fix: str$1 })),
     fatal: bool
   }),
-  decide: obj({
-    title: str,
-    summary: str,
-    recommendation: str,
-    goal_served: str,
-    reasons: arr(str),
-    tradeoffs: arr(str),
-    cuts: arr(obj({ what: str, why: str })),
-    uncertainty: arr(str),
-    would_change: arr(str),
-    call: oneOf("decide", "test", "defer", "ask"),
-    door: oneOf("one-way", "two-way"),
-    displaces: str,
-    revisit_if: str,
-    next_action: obj({ what: str, owner: str, when: str }),
-    test: str,
-    rule: str
+  decide: obj$1({
+    title: str$1,
+    summary: str$1,
+    recommendation: str$1,
+    goal_served: str$1,
+    reasons: arr$1(str$1),
+    tradeoffs: arr$1(str$1),
+    cuts: arr$1(obj$1({ what: str$1, why: str$1 })),
+    uncertainty: arr$1(str$1),
+    would_change: arr$1(str$1),
+    call: oneOf$1("decide", "test", "defer", "ask"),
+    door: oneOf$1("one-way", "two-way"),
+    displaces: str$1,
+    revisit_if: str$1,
+    next_action: obj$1({ what: str$1, owner: str$1, when: str$1 }),
+    test: str$1,
+    rule: str$1
   }),
-  unstick: obj({
-    summary: str,
-    plain: str,
-    blocker: str,
-    constraint: str,
-    suggestion: oneOf("rerun", "ask", "nothing")
+  unstick: obj$1({
+    summary: str$1,
+    plain: str$1,
+    blocker: str$1,
+    constraint: str$1,
+    suggestion: oneOf$1("rerun", "ask", "nothing")
   })
 };
-const SYSTEM = `You are one step inside a thinking system that turns an incomplete thought into clear action with less decision fatigue. It works for anyone and any subject.
+const SYSTEM$1 = `You are one step inside a thinking system that turns an incomplete thought into clear action with less decision fatigue. It works for anyone and any subject.
 Rules:
 - Separate what the user STATED from what you INFER. Never present an inference as something they said. Corrections from the user override your inferences.
 - Separate evidence from assumptions and unknowns.
@@ -593,7 +594,7 @@ function addRule(text, from) {
   writeFileSync(RULES_FILE, (existsSync(RULES_FILE) ? readFileSync(RULES_FILE, "utf8") : head) + `- ${text.replace(/\s+/g, " ").trim()} (from ${from})
 `);
 }
-const timers = /* @__PURE__ */ new Map();
+const timers$1 = /* @__PURE__ */ new Map();
 const runDir = (run2) => join(RUNS_DIR, run2.id);
 function loadRuns() {
   if (!existsSync(RUNS_DIR)) return [];
@@ -607,13 +608,13 @@ function loadRuns() {
 }
 function saveRun(run2, now = false) {
   const write2 = () => {
-    timers.delete(run2.id);
+    timers$1.delete(run2.id);
     mkdirSync(runDir(run2), { recursive: true });
     writeFileSync(join(runDir(run2), "run.json"), JSON.stringify(run2, null, 2));
   };
-  clearTimeout(timers.get(run2.id));
+  clearTimeout(timers$1.get(run2.id));
   if (now) return write2();
-  timers.set(run2.id, setTimeout(write2, 300));
+  timers$1.set(run2.id, setTimeout(write2, 300));
 }
 function writeRunFile(run2, name, content) {
   mkdirSync(runDir(run2), { recursive: true });
@@ -695,13 +696,13 @@ function recordMarkdown(run2) {
 const KEY = process.env.TYPESAFE_API_KEY || config.typesafeKey;
 const JEV_AVAILABLE = !!KEY;
 const PRICE = 0.042 / 1e6;
-async function ask(state, questions) {
+async function ask$1(state, questions2) {
   const t = Date.now();
   for (let attempt = 0; ; attempt++) {
     const res = await fetch("https://api.typesafe.ai/v1/systemone", {
       method: "POST",
       headers: { authorization: `Bearer ${KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: "jev-latest", state, questions }),
+      body: JSON.stringify({ model: "jev-latest", state, questions: questions2 }),
       signal: AbortSignal.timeout(3e4)
     });
     if ((res.status === 429 || res.status === 529) && attempt < 3) {
@@ -713,6 +714,7 @@ async function ask(state, questions) {
     return { a: r.answers, ms: Date.now() - t, cost: r.usage.input_tokens * PRICE, model: r.model };
   }
 }
+const jevAsk = ask$1;
 const meta = (r) => ({ ms: r.ms, model: r.model });
 const shortThought = (text) => text.length > 4e3 ? text.slice(0, 4e3) + "..." : text;
 function situation(run2, frame, question2, extra = {}) {
@@ -728,32 +730,32 @@ function situation(run2, frame, question2, extra = {}) {
   };
 }
 async function pickMethods(state, { max, exclude = [] }) {
-  const pool = METHODS.filter((m) => !exclude.includes(m.id));
-  const questions = {
+  const pool2 = METHODS.filter((m) => !exclude.includes(m.id));
+  const questions2 = {
     simple: { type: "noul", instructions: "Is `question` simple enough that one quick line of thinking settles it?" },
     // The yes/no answers alone run high for most methods; one choice across all of them sets the lead.
-    lead: { type: "choice", instructions: "Which thinking method would most help answer `question` toward `goal`?", criteria: Object.fromEntries(pool.map((m) => [m.id, `${m.name}: ${m.when}`])) }
+    lead: { type: "choice", instructions: "Which thinking method would most help answer `question` toward `goal`?", criteria: Object.fromEntries(pool2.map((m) => [m.id, `${m.name}: ${m.when}`])) }
   };
-  for (const m of pool) questions["m_" + m.id] = {
+  for (const m of pool2) questions2["m_" + m.id] = {
     type: "noul",
     instructions: `Would the thinking method "${m.name}" materially help answer \`question\`, given \`goal\` and the situation? The method: ${m.how} It fits when: ${m.when}`,
     criteria: { true: "Applying it here would surface options, risks or facts that could change the answer", false: "It would add little here or does not fit this situation" }
   };
-  const r = await ask(state, questions);
+  const r = await ask$1(state, questions2);
   const lead = r.a.lead.probabilities;
-  const scored = pool.map((m) => ({ id: m.id, p: r.a["m_" + m.id].noul, lead: lead[m.id] || 0 })).sort((a, b) => 2 * b.lead + b.p - (2 * a.lead + a.p));
+  const scored = pool2.map((m) => ({ id: m.id, p: r.a["m_" + m.id].noul, lead: lead[m.id] || 0 })).sort((a, b) => 2 * b.lead + b.p - (2 * a.lead + a.p));
   const simple = r.a.simple.noul >= 0.7;
   const picks = scored.filter((s) => s.p >= 0.5 || s.lead >= 0.1).slice(0, simple ? 1 : max);
   return { ...meta(r), cost: r.cost, simple, scored, picks: picks.length ? picks : null };
 }
-async function weighQuestions(state, qs) {
+async function weighQuestions$1(state, qs) {
   if (!qs.length) return null;
-  const questions = {};
+  const questions2 = {};
   qs.forEach((q, i) => {
-    questions["changes_" + i] = { type: "noul", instructions: `Would the user's answer to \`candidate_questions[${i}]\` change the recommendation, the scope or the next action?` };
-    questions["blocks_" + i] = { type: "noul", instructions: `Is a good answer impossible without the user answering \`candidate_questions[${i}]\`, rather than a sensible default the system could choose and state?` };
+    questions2["changes_" + i] = { type: "noul", instructions: `Would the user's answer to \`candidate_questions[${i}]\` change the recommendation, the scope or the next action?` };
+    questions2["blocks_" + i] = { type: "noul", instructions: `Is a good answer impossible without the user answering \`candidate_questions[${i}]\`, rather than a sensible default the system could choose and state?` };
   });
-  const r = await ask({ ...state, candidate_questions: qs.map((q) => `${q.q} (why: ${q.why})`) }, questions);
+  const r = await ask$1({ ...state, candidate_questions: qs.map((q) => `${q.q} (why: ${q.why})`) }, questions2);
   return { ...meta(r), cost: r.cost, each: qs.map((q, i) => ({ changes: r.a["changes_" + i].noul, blocks: r.a["blocks_" + i].noul })) };
 }
 const NEXT = {
@@ -771,18 +773,18 @@ const FIT = [
   "Clearly the strongest fit for the goal and constraints"
 ];
 async function gate(state, out, allowed) {
-  const questions = {};
-  if (allowed.length > 1) questions.next = { type: "choice", instructions: "The branches have reported and the options are in `options`. What should the thinking system do next?", criteria: Object.fromEntries(allowed.map((k) => [k, NEXT[k]])) };
+  const questions2 = {};
+  if (allowed.length > 1) questions2.next = { type: "choice", instructions: "The branches have reported and the options are in `options`. What should the thinking system do next?", criteria: Object.fromEntries(allowed.map((k) => [k, NEXT[k]])) };
   out.all.forEach((o, i) => {
-    questions["fit_" + i] = { type: "score", instructions: `How well does \`options[${i}]\` serve \`goal\` and answer \`question\`?`, criteria: FIT };
-    if (state.hard_constraints.length) questions["breaks_" + i] = { type: "noul", instructions: `Does \`options[${i}]\` break any rule in \`hard_constraints\`?` };
+    questions2["fit_" + i] = { type: "score", instructions: `How well does \`options[${i}]\` serve \`goal\` and answer \`question\`?`, criteria: FIT };
+    if (state.hard_constraints.length) questions2["breaks_" + i] = { type: "noul", instructions: `Does \`options[${i}]\` break any rule in \`hard_constraints\`?` };
   });
-  const r = await ask({
+  const r = await ask$1({
     ...state,
     options: out.all.map((o) => `${o.title}: ${o.detail}`),
     possible_questions: out.questions.map((q) => q.q),
     possible_research: out.research.map((x) => x.query)
-  }, questions);
+  }, questions2);
   const n = r.a.next;
   return {
     ...meta(r),
@@ -803,17 +805,17 @@ async function checkAnswers(pairs) {
       criteria: { true: "It answers it, states a preference or fact that bears on it, or says to decide or skip it", false: "It is about something else, contradicts itself, or is too vague to act on" }
     };
   });
-  const r = await ask(state, qs);
+  const r = await ask$1(state, qs);
   return { ...meta(r), cost: r.cost, each: pairs.map((p, i) => r.a["ok_" + i].noul) };
 }
-const bus = new EventEmitter();
-bus.setMaxListeners(100);
+const bus$1 = new EventEmitter();
+bus$1.setMaxListeners(100);
 const EFFORT = {
   quick: { methods: 2, loops: 0, asks: 1, review: false },
   normal: { methods: 4, loops: 1, asks: 2, review: true },
   deep: { methods: 6, loops: 2, asks: 3, review: true }
 };
-const CONCURRENCY = 3;
+const CONCURRENCY$1 = 3;
 const TITLES = {
   capture: "Your thought",
   frame: "Frame it",
@@ -872,7 +874,7 @@ function changed(run2, now = false) {
   run2.status = statusOf(run2);
   run2.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   saveRun(run2, now);
-  bus.emit("run", run2);
+  bus$1.emit("run", run2);
 }
 function statusOf(run2) {
   const a = active(run2);
@@ -961,7 +963,7 @@ function tick(run2) {
   if (run2.paused) return changed(run2);
   let running = active(run2).filter((n) => n.status === "running").length;
   for (const n of active(run2)) {
-    if (running >= CONCURRENCY) break;
+    if (running >= CONCURRENCY$1) break;
     if (n.status !== "queued") continue;
     if (!n.deps.every((d) => run2.nodes[d]?.status === "done")) continue;
     running++;
@@ -991,9 +993,9 @@ async function start(run2, node) {
     let res = node.kind === "route" && run2.jev ? await jevRoute(run2, node, E) : null;
     if (!res) res = await callModel({
       model: run2.model,
-      system: SYSTEM,
+      system: SYSTEM$1,
       prompt: stepPrompt(node.kind, node, context(run2, scope), opts),
-      schema: SCHEMAS[node.kind],
+      schema: SCHEMAS$1[node.kind],
       kind: node.kind,
       web: node.kind === "research" && model.web
     });
@@ -1058,7 +1060,7 @@ async function jevJudge(run2, node, opts) {
   const o = node.out, s = node.scope;
   try {
     if (node.kind === "frame" && opts.askAllowed && o.questions.length) {
-      const r = await weighQuestions(situation(run2, node, o.question), o.questions);
+      const r = await weighQuestions$1(situation(run2, node, o.question), o.questions);
       track(run2, r);
       const all = weigh(o.questions, r);
       o.questions = keepQuestions(all);
@@ -1073,7 +1075,7 @@ async function jevJudge(run2, node, opts) {
         allowed.push("more");
       }
       if (opts.askAllowed && o.questions.length) allowed.push("ask");
-      const [g, w] = await Promise.all([gate(state, o, allowed), allowed.includes("ask") ? weighQuestions(state, o.questions) : null]);
+      const [g, w] = await Promise.all([gate(state, o, allowed), allowed.includes("ask") ? weighQuestions$1(state, o.questions) : null]);
       track(run2, g);
       if (w) {
         track(run2, w);
@@ -1190,8 +1192,8 @@ function after(run2, node, E, opts) {
 }
 function createRun({ input, model, effort, handsOff = false, jev: useJev }) {
   const now = /* @__PURE__ */ new Date();
-  const words = input.split("\n").filter((l) => !l.startsWith("--- ")).join(" ").toLowerCase().match(/[a-z0-9]+/g);
-  const slug = (words || ["thought"]).slice(0, 5).join("-").slice(0, 40);
+  const words2 = input.split("\n").filter((l) => !l.startsWith("--- ")).join(" ").toLowerCase().match(/[a-z0-9]+/g);
+  const slug = (words2 || ["thought"]).slice(0, 5).join("-").slice(0, 40);
   model = resolveModel(model);
   const id = `${now.toISOString().slice(0, 10)}-${slug}-${Math.random().toString(36).slice(2, 6)}`;
   const run2 = {
@@ -1226,7 +1228,7 @@ function need(run2, nodeId) {
   if (!n) throw new Error("No such step");
   return n;
 }
-async function answer(run2, { nodeId, answers = [], skip = false, asIs = false }) {
+async function answer$1(run2, { nodeId, answers = [], skip = false, asIs = false }) {
   const n = need(run2, nodeId);
   if (n.kind !== "ask" || n.status !== "waiting") throw new Error("That step is not waiting for you");
   const given = answers.filter((a) => a.a?.trim());
@@ -1293,7 +1295,7 @@ function correct(run2, { original, action, text = "", frameId, nodeId }) {
   if (action !== "confirm" && frame) return rerun(run2, { nodeId: frame.id });
   changed(run2);
 }
-function settle(run2, { point, text, scope = "root" }) {
+function settle$1(run2, { point, text, scope = "root" }) {
   if (!point?.trim() || !text?.trim()) throw new Error("Write an answer first");
   run2.pointAnswers = (run2.pointAnswers || []).filter((a) => a.point !== point);
   run2.pointAnswers.push({ point, text, scope, at: (/* @__PURE__ */ new Date()).toISOString() });
@@ -1303,10 +1305,10 @@ function settle(run2, { point, text, scope = "root" }) {
   if (target) return rerun(run2, { nodeId: target.id });
   changed(run2);
 }
-function stuck(run2, { nodeId, note = "" }) {
+function stuck(run2, { nodeId, note: note2 = "" }) {
   const n = need(run2, nodeId);
-  n.stuck = { note, at: (/* @__PURE__ */ new Date()).toISOString() };
-  add(run2, { kind: "unstick", scope: n.scope, deps: [], data: { target: n.id, targetTitle: n.title, targetSummary: summarize(n), note } });
+  n.stuck = { note: note2, at: (/* @__PURE__ */ new Date()).toISOString() };
+  add(run2, { kind: "unstick", scope: n.scope, deps: [], data: { target: n.id, targetTitle: n.title, targetSummary: summarize(n), note: note2 } });
   log(run2, `Marked stuck: ${n.title}`);
   tick(run2);
 }
@@ -2845,18 +2847,18 @@ function addBorderNode$1(g, prefix, rank2, order2) {
   return addDummyNode(g, "border", node, prefix);
 }
 function splitToChunks(array, chunkSize = CHUNKING_THRESHOLD) {
-  const chunks = [];
+  const chunks2 = [];
   for (let i = 0; i < array.length; i += chunkSize) {
     const chunk = array.slice(i, i + chunkSize);
-    chunks.push(chunk);
+    chunks2.push(chunk);
   }
-  return chunks;
+  return chunks2;
 }
 const CHUNKING_THRESHOLD = 65535;
 function applyWithChunking$1(fn, argsArray) {
   if (argsArray.length > CHUNKING_THRESHOLD) {
-    const chunks = splitToChunks(argsArray);
-    return fn.apply(null, chunks.map((chunk) => fn.apply(null, chunk)));
+    const chunks2 = splitToChunks(argsArray);
+    return fn.apply(null, chunks2.map((chunk) => fn.apply(null, chunk)));
   } else {
     return fn.apply(null, argsArray);
   }
@@ -3946,7 +3948,7 @@ function findType1Conflicts(g, layering) {
 }
 function findType2Conflicts(g, layering) {
   let conflicts = {};
-  function scan(south, southPos, southEnd, prevNorthBorder, nextNorthBorder) {
+  function scan2(south, southPos, southEnd, prevNorthBorder, nextNorthBorder) {
     let v;
     util$3.range(southPos, southEnd).forEach((i) => {
       v = south[i];
@@ -3967,12 +3969,12 @@ function findType2Conflicts(g, layering) {
         let predecessors = g.predecessors(v);
         if (predecessors.length) {
           nextNorthPos = g.node(predecessors[0]).order;
-          scan(south, southPos, southLookahead, prevNorthPos, nextNorthPos);
+          scan2(south, southPos, southLookahead, prevNorthPos, nextNorthPos);
           southPos = southLookahead;
           prevNorthPos = nextNorthPos;
         }
       }
-      scan(south, southPos, south.length, nextNorthPos, north.length);
+      scan2(south, southPos, south.length, nextNorthPos, north.length);
     });
     return south;
   }
@@ -4643,6 +4645,982 @@ function layout(run2, scope = "root", showOld = false) {
   }
   return { visible, edges, positions };
 }
+const KINDS = [".vtt", ".docx", ".md", ".txt"];
+const clock = (s) => s.replace(/\.\d+$/, "").replace(/^00:/, "");
+function vtt(text) {
+  const turns = [];
+  for (const block of text.replace(/\r/g, "").split(/\n\n+/)) {
+    const lines = block.split("\n");
+    const t = lines.findIndex((l) => l.includes("-->"));
+    if (t < 0) continue;
+    const at = clock(lines[t].split("-->")[0].trim());
+    let body2 = lines.slice(t + 1).join(" ").trim();
+    const v = body2.match(/^<v ([^>]+)>/) || body2.match(/^([A-Z][^:<>]{1,40}):\s/);
+    const who = v ? person(v[1]) : "";
+    body2 = body2.replace(/<\/?v[^>]*>/g, "").replace(v && !body2.startsWith("<v") ? v[0] : /^$/, "").replace(/\s+/g, " ").trim();
+    if (!body2) continue;
+    const last = turns.at(-1);
+    if (last && last.who === who && last.text.length < 1200) last.text += " " + body2;
+    else turns.push({ at, who, text: body2 });
+  }
+  return turns;
+}
+const person = (s) => s.trim().split(/[,\s]/)[0].replace(/^([A-Z][a-z]+)[A-Z].*$/, "$1");
+const TEAMS = /^\s*([A-Z][^\d]{1,60}?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s+(.*)$/;
+function plain(text) {
+  const lines = text.replace(/\r/g, "").split("\n");
+  if (lines.filter((l) => TEAMS.test(l)).length > 5) {
+    return lines.map((l) => l.match(TEAMS)).filter(Boolean).map(([, who, at, t]) => ({ at, who: person(who), text: t.trim() }));
+  }
+  return text.replace(/\r/g, "").split(/\n\s*\n/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean).map((p) => {
+    const m = p.match(/^([A-Z][\w.'-]*(?: [A-Z][\w.'-]*){0,3}):\s+(.*)$/);
+    return m ? { at: "", who: person(m[1]), text: m[2] } : { at: "", who: "", text: p };
+  });
+}
+function docx(path) {
+  const r = spawnSync("textutil", ["-convert", "txt", "-stdout", path], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (r.error || r.status !== 0) throw new Error(`Could not read ${basename(path)} (textutil)`);
+  return r.stdout;
+}
+function callDate(path) {
+  const m = basename(path).match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : statSync(path).mtime.toISOString().slice(0, 10);
+}
+function parseFile(path) {
+  const ext = extname(path).toLowerCase();
+  const raw = ext === ".docx" ? docx(path) : readFileSync(path, "utf8");
+  const turns = ext === ".vtt" ? vtt(raw) : plain(raw);
+  const text = turns.map((t) => `${t.at ? `[${t.at}] ` : ""}${t.who ? t.who + ": " : ""}${t.text}`).join("\n");
+  return {
+    file: basename(path),
+    title: basename(path, extname(path)).replace(/^\d{4}-\d{2}-\d{2}\s*/, ""),
+    date: callDate(path),
+    hash: createHash("sha1").update(text).digest("hex").slice(0, 12),
+    speakers: [...new Set(turns.map((t) => t.who).filter(Boolean))],
+    turns: turns.length,
+    text
+  };
+}
+function chunks(text, max = 48e3) {
+  if (text.length <= max) return [text];
+  const out = [];
+  let cur = "";
+  for (const line of text.split("\n")) {
+    if (cur.length + line.length > max && cur) {
+      out.push(cur);
+      cur = "";
+    }
+    cur += line + "\n";
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+const str = { type: "string" };
+const num = { type: "number" };
+const arr = (items) => ({ type: "array", items });
+const oneOf = (...values) => ({ type: "string", enum: values });
+const obj = (props) => ({ type: "object", properties: props, required: Object.keys(props), additionalProperties: false });
+const ITEM_TYPES = ["decision", "open", "assumption", "todo", "idea", "fact", "preference"];
+const THREAD_STATUS = ["decided", "unsettled", "open", "assumed", "done"];
+const SCHEMAS = {
+  extract: obj({
+    summary: str,
+    items: arr(obj({
+      type: oneOf(...ITEM_TYPES),
+      text: str,
+      context: str,
+      who: str,
+      at: str,
+      quote: str,
+      terms: arr(obj({ term: str, sense: str })),
+      mixed: str,
+      branch: str,
+      confidence: num,
+      new_branch: str
+    }))
+  }),
+  threads: obj({
+    threads: arr(obj({
+      id: str,
+      title: str,
+      status: oneOf(...THREAD_STATUS),
+      summary: str,
+      decision: str,
+      ways: arr(str),
+      items: arr(str),
+      question: obj({ q: str, why: str, options: arr(str) })
+    }))
+  }),
+  crosscheck: obj({
+    summary: str,
+    links: arr(obj({ from: str, to: str, idea: str, action: str, strength: oneOf("strong", "possible") }))
+  }),
+  ask: obj({ answer: str, cites: arr(str), gaps: arr(str) })
+};
+const SYSTEM = `You read a business's recorded conversations and turn them into a clean, traceable record.
+Rules:
+- Each item must stand on its own: someone reading only that item, months later, knows what it is about. Put the missing context in "context" (the verse needs its chapter).
+- Never invent. Every item traces to words in the transcript; "quote" is copied exactly (up to 25 words) and "at" is the time shown before it.
+- Keep the speaker's meaning. Brainstorms are ideas, not decisions. A decision needs someone with the say agreeing to it.
+- Transcription garbles names, numbers and product words. Read them from context and say so in "context" when unsure.
+- Plain words, short sentences.`;
+const outline = (tree, depth = 0) => tree.map((n) => `${"  ".repeat(depth)}- ${n.id}: ${n.name}${n.desc ? " — " + n.desc : ""}
+${n.children?.length ? outline(n.children, depth + 1) : ""}`).join("");
+function extractPrompt({ library, call, part, parts, text, tree, glossary: glossary2 }) {
+  return `Business: ${library.name}
+${call.note ? `Project note: "${call.title}", updated ${call.date}. It is the written record of work done and decisions made, often off the recorded calls; dated sections give when. Use the section's date in "context", and "" for "at".` : `Conversation: "${call.title}" on ${call.date}${call.speakers.length ? `, speakers: ${call.speakers.join(", ")}` : ""}`}${parts > 1 ? ` (part ${part} of ${parts})` : ""}
+
+The business tree (file each item at the deepest branch that fits; use the id):
+${outline(tree)}
+${glossary2.length ? `
+Words this business uses in more than one sense (keep them apart):
+${glossary2.map((g) => `- ${g.term}: ${g.senses.join(" / ")}`).join("\n")}
+` : ""}
+Pull out every item that matters to running or growing the business:
+- decision: settled, by someone with the say ("who" is the decider).
+- open: a question raised and not answered.
+- assumption: something treated as true that nobody confirmed.
+- todo: a task someone took on or was given ("who" is the owner, or "" if nobody).
+- idea: a proposal or brainstorm, not agreed.
+- fact: a number, rule, name or detail worth keeping.
+- preference: what someone likes or rejects (design, wording, process).
+Skip small talk and anything outside the business (family, workouts, jokes), unless it changes the work.
+
+For each item:
+- "terms": the 1 to 4 subject words someone would search for, each with the sense meant here (e.g. {"term":"ceiling","sense":"cost cap on a budget"} vs {"term":"ceiling","sense":"part of the building"}).
+- "mixed": only if this item itself uses one word in two senses, so it could be filed in two places, say which ("ceiling: damage and price"); talking about the word itself does not count. Else "".
+- "branch": the tree id it belongs to, "none" if it fits nowhere; "confidence" 0 to 1 that the branch is right.
+- "new_branch": if no branch fits well, a short name for the branch that should exist; else "".
+- "summary": two or three lines on what this ${parts > 1 ? "part of the " : ""}conversation covered.
+
+Transcript:
+${text}`;
+}
+function threadsPrompt({ library, path, items, existing }) {
+  return `Business: ${library.name}
+Branch: ${path}
+
+Group these items into threads: one thread per topic that was talked about, across every call. Keep an existing thread's id when it is the same topic; make a short new id (kebab-case) for a new one.
+For each thread:
+- "status": decided (someone with the say settled it; "decision" says what and who), unsettled (talked about in different ways and never settled; list each way in "ways"), open (raised, not answered), assumed (treated as true, never confirmed), done (the work is finished).
+- "summary": where it stands now, in one or two lines, latest first when calls disagree. Say the date of the latest word on it.
+- "items": the item ids it is built from.
+- "question": for anything not decided or done, the one question to ask the owner that would settle it, why it matters, and 2 to 4 short options. For decided or done, empty strings and [].
+Later calls override earlier ones when they clearly settle or reverse something; say so in the summary. A project note records decisions made off the calls: when it says something was picked, approved or done, that settles it.
+${existing.length ? `
+Existing threads on this branch:
+${existing.map((t) => `- ${t.id} [${t.status}] ${t.title}: ${t.summary}`).join("\n")}
+` : ""}
+Items (id | date | type | who | text | context; "note" marks the project note):
+${items.map((i) => `${i.id} | ${i.date}${i.note ? " note" : ""} | ${i.type} | ${i.who} | ${i.text} | ${i.context}`).join("\n")}`;
+}
+function crosscheckPrompt({ library, threads }) {
+  return `Business: ${library.name}
+
+Below is everything this business has talked through, as threads filed on a tree. Look across branches for places where something worked out in one part of the business applies somewhere else and nobody has connected it yet. Example: a property model built for one client becomes the hook in an email to attorneys.
+Only real, useful links. For each: "from" and "to" are thread ids or branch ids, "idea" says how it applies, "action" is the first concrete step, "strength" is strong or possible.
+
+Threads (id | branch | status | title | summary):
+${threads.map((t) => `${t.id} | ${t.path} | ${t.status} | ${t.title} | ${t.summary}`).join("\n")}`;
+}
+function askPrompt({ library, question: question2, items, threads }) {
+  return `Business: ${library.name}
+Question: ${question2}
+
+Answer from the record below only. Say where each point was said (call and date). Put the item or thread ids you used in "cites". If the record does not settle it, say so and list what is missing in "gaps".
+
+Threads:
+${threads.map((t) => `${t.id} [${t.status}] ${t.path}: ${t.title} — ${t.summary}`).join("\n")}
+
+Items (id | date | call | type | who | text | quote):
+${items.map((i) => `${i.id} | ${i.date} | ${i.call} | ${i.type} | ${i.who} | ${i.text} | "${i.quote}"`).join("\n")}`;
+}
+const STATUS = { unsettled: "Talked about, never settled", open: "Open", assumed: "Assumed, never confirmed", decided: "Decided", done: "Done" };
+const ORDER = ["unsettled", "open", "assumed", "decided", "done"];
+function writeMarkdown(lib2, s, v) {
+  const index = /* @__PURE__ */ new Map();
+  const walk = (ns, parent) => ns.forEach((n) => {
+    index.set(n.id, { ...n, parent });
+    walk(n.children || [], n.id);
+  });
+  walk(s.tree.branches, null);
+  const path = (id) => {
+    const p = [];
+    for (let n = index.get(id); n; n = index.get(n.parent)) p.unshift(n.name);
+    return p.join(" › ");
+  };
+  const src = (id) => {
+    const i = s.items[id];
+    return i ? `${i.file}${i.at ? " " + i.at : ""}` : id;
+  };
+  const c = v.counts;
+  const out = [
+    `# ${lib2.name}: conversation index`,
+    "",
+    `Built by the Thinking System (Conversations mode). Open the live map: http://localhost:4477/library/${lib2.id}`,
+    `Updated ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace("T", " ")} UTC. ${c.calls} calls, ${c.items} items, ${c.filed} filed, ${c.review} to check, ${c.threads} topics (${c.open} not settled).`,
+    `Items file on their own at ${Math.round(v.fileAt * 100)}% confidence or higher; below that they wait for a person. Data: \`library.json\`, branches: \`tree.json\`.`,
+    "",
+    "## Needs you",
+    "",
+    ...v.questions.slice(0, 25).map((q, k) => q.kind === "thread" ? `${k + 1}. **${q.q}** (${STATUS[q.status].toLowerCase()}, ${q.where})${q.ways?.length ? `
+   Ways it was talked about: ${q.ways.join(" / ")}` : ""}` : `${k + 1}. **Where does this belong?** "${q.q}" — best guess ${q.guessName} (${q.why}). From ${q.call ? s.calls[q.call]?.file : ""} ${q.at || ""}`),
+    v.questions.length > 25 ? `
+…and ${v.questions.length - 25} more in the app.` : "",
+    ""
+  ];
+  if (s.crosslinks.length) {
+    out.push("## Applies elsewhere (last cross-check)", "", ...s.crosscheckSummary ? [s.crosscheckSummary, ""] : []);
+    for (const l of s.crosslinks) out.push(`- **${l.fromName} → ${l.toName}** (${l.strength}): ${l.idea} First step: ${l.action}`);
+    out.push("");
+  }
+  out.push("## By branch", "");
+  const threads = Object.values(s.threads);
+  for (const top of s.tree.branches) {
+    const here = threads.filter((t) => t.branch === top.id || t.branch.startsWith(top.id + "."));
+    if (!here.length) continue;
+    out.push(`### ${top.name}`, "");
+    for (const st of ORDER) {
+      const ts = here.filter((t) => t.status === st).sort((a, b) => (b.last || "").localeCompare(a.last || ""));
+      if (!ts.length) continue;
+      out.push(`**${STATUS[st]}**`, "");
+      for (const t of ts) {
+        out.push(`- **${t.title}** — ${path(t.branch)}. ${t.summary}${t.decision ? ` Decision: ${t.decision}${t.answeredBy ? " (answered in the app)" : ""}` : ""}`);
+        out.push(`  Sources: ${t.items.slice(0, 6).map(src).join("; ")}${t.items.length > 6 ? `; +${t.items.length - 6} more` : ""}`);
+      }
+      out.push("");
+    }
+  }
+  out.push("## Calls read", "");
+  for (const call of v.calls) out.push(`- ${call.date} ${call.file}: ${call.status === "dup" ? `same as ${call.dupOf}` : call.status === "done" ? `${call.items} items. ${call.summary || ""}` : call.status}`);
+  writeFileSync(join(lib2.dir, "INDEX.md"), out.join("\n") + "\n");
+}
+const bus = new EventEmitter();
+bus.setMaxListeners(100);
+const FILE_AT = 0.95;
+const CONCURRENCY = 3;
+const SONNET_IN = 3 / 1e6, SONNET_OUT = 15 / 1e6;
+const LIBS = new Map((config.libraries || []).map((l) => [l.id, { ...l, sources: [].concat(l.sources || l.source || []) }]));
+const states = /* @__PURE__ */ new Map();
+const listLibraries = () => [...LIBS.values()].map((l) => ({ id: l.id, name: l.name, ...counts(load(l.id)) }));
+const getLibrary = (id) => LIBS.get(id);
+function load(id) {
+  if (states.has(id)) return states.get(id);
+  const lib2 = LIBS.get(id);
+  if (!lib2) return null;
+  const read2 = (f, d) => {
+    try {
+      return JSON.parse(readFileSync(join(lib2.dir, f), "utf8"));
+    } catch {
+      return d;
+    }
+  };
+  const tree = read2("tree.json", { name: lib2.name, branches: [] });
+  const s = {
+    calls: {},
+    items: {},
+    threads: {},
+    answers: [],
+    corrections: [],
+    crosslinks: [],
+    snoozed: {},
+    scopeSig: {},
+    resolvedPairs: {},
+    cost: 0,
+    seq: 0,
+    ...read2("library.json", {}),
+    tree,
+    job: null,
+    version: 0
+  };
+  states.set(id, s);
+  return s;
+}
+let timers = {};
+function save(id, now = false) {
+  const s = states.get(id), lib2 = LIBS.get(id);
+  s.version++;
+  bus.emit("library", id);
+  const write2 = () => {
+    delete timers[id];
+    mkdirSync(lib2.dir, { recursive: true });
+    const { tree, job, version: version2, ...rest } = s;
+    writeFileSync(join(lib2.dir, "library.json"), JSON.stringify(rest, null, 1));
+    writeFileSync(join(lib2.dir, "tree.json"), JSON.stringify(tree, null, 2));
+    writeMarkdown(lib2, s, view(id));
+  };
+  clearTimeout(timers[id]);
+  if (now) return write2();
+  timers[id] = setTimeout(write2, 800);
+}
+const flat = (nodes2, parent = null, depth = 0, out = /* @__PURE__ */ new Map()) => {
+  for (const n of nodes2) {
+    out.set(n.id, { ...n, parent, depth });
+    flat(n.children || [], n.id, depth + 1, out);
+  }
+  return out;
+};
+const pathOf = (index, id) => {
+  const p = [];
+  for (let n = index.get(id); n; n = index.get(n.parent)) p.unshift(n);
+  return p;
+};
+const pathName = (index, id) => id === "none" ? "Not this business" : pathOf(index, id).map((n) => n.name).join(" › ") || id;
+const within = (index, id, top) => pathOf(index, id).some((n) => n.id === top);
+const scopeOf = (index, id) => pathOf(index, id).slice(0, 2).at(-1)?.id || "none";
+function counts(s) {
+  const items = Object.values(s.items).filter((i) => !i.dup);
+  return {
+    calls: Object.values(s.calls).filter((c) => !c.dupOf).length,
+    newCalls: Object.values(s.calls).filter((c) => !c.dupOf && c.status !== "done").length,
+    items: items.length,
+    filed: items.filter((i) => i.filed && i.branch !== "none").length,
+    review: items.filter(needsReview).length,
+    threads: Object.keys(s.threads).length,
+    open: Object.values(s.threads).filter((t) => ["unsettled", "open", "assumed"].includes(t.status)).length,
+    cost: s.cost
+  };
+}
+const needsReview = (i) => !i.filed && i.placed && !i.offtopic;
+const home = (i) => i.by === "owner" ? i.branch : i.finer?.branch || i.branch;
+const threadable = (i) => i.placed && !i.offtopic && !i.dup && home(i) !== "none";
+function questions(id) {
+  const s = load(id), index = flat(s.tree.branches);
+  const rank2 = { unsettled: 0, open: 2, assumed: 3 };
+  const fromThreads = Object.values(s.threads).filter((t) => rank2[t.status] !== void 0 && t.question?.q && !s.snoozed["t:" + t.id]).map((t) => ({
+    id: "t:" + t.id,
+    kind: "thread",
+    thread: t.id,
+    status: t.status,
+    q: t.question.q,
+    why: t.question.why,
+    options: t.question.options,
+    where: pathName(index, t.branch),
+    ways: t.ways,
+    items: t.items.length,
+    weight: t.weight ?? 0.5,
+    order: rank2[t.status] - (t.weight ?? 0.5) - Math.min(t.items.length, 10) / 20,
+    now: t.status === "unsettled" || (t.weight ?? 0.5) >= 0.8
+  }));
+  const groups = {};
+  for (const i of Object.values(s.items)) {
+    if (needsReview(i) && !s.snoozed["i:" + i.id]) (groups["r:" + i.branch] ||= []).push(i);
+    else if (i.finer && i.by !== "owner" && !s.snoozed["f:" + i.id]) (groups["f:" + i.finer.branch] ||= []).push(i);
+  }
+  const fromItems = [];
+  for (const [key, list2] of Object.entries(groups)) {
+    const finer = key.startsWith("f:"), branch = key.slice(2);
+    if (list2.length === 1 && !finer) {
+      fromItems.push(placeQ(list2[0], index));
+      continue;
+    }
+    fromItems.push({
+      id: key,
+      kind: "group",
+      finer,
+      branch,
+      name: pathName(index, branch),
+      q: finer ? `${list2.length} item(s) filed under ${pathName(index, list2[0].branch)} look like they belong one level in, in ${pathName(index, branch)}.` : `${list2.length} items look like they belong in ${pathName(index, branch)}.`,
+      items: list2.sort((a, b) => (b.finer?.p ?? b.conf) - (a.finer?.p ?? a.conf)).map((i) => ({ id: i.id, text: i.text, conf: i.finer?.p ?? i.conf, why: finer ? "" : reviewWhy(i), file: i.file, at: i.at })),
+      order: finer ? 5 - list2.length / 100 : 1 - list2.length / 100,
+      now: !finer && list2.length >= 10
+    });
+  }
+  return [...fromThreads, ...fromItems, ...confusions(s, index)].sort((a, b) => a.order - b.order);
+}
+function confusions(s, index) {
+  const pairs = {};
+  for (const i of Object.values(s.items)) {
+    if (!(needsReview(i) || i.finer) || i.by === "owner") continue;
+    const g = i.finer?.branch || i.branch;
+    const other = i.disagree ? i.claudeBranch : i.alts?.[0]?.p >= 0.15 ? i.alts[0].branch : null;
+    if (!other || other === "none" || g === "none" || !index.has(other) || !index.has(g) || within(index, g, other) || within(index, other, g)) continue;
+    const key = [g, other].sort().join("|");
+    (pairs[key] ||= []).push(i);
+  }
+  return Object.entries(pairs).filter(([k, list2]) => list2.length >= 5 && !s.resolvedPairs[k] && !s.snoozed["b:" + k]).sort((a, b) => b[1].length - a[1].length).slice(0, 8).map(([k, list2]) => {
+    const [a, b] = k.split("|").map((x) => ({ id: x, name: pathName(index, x), desc: index.get(x).desc || "" }));
+    return {
+      id: "b:" + k,
+      kind: "tree",
+      a,
+      b,
+      count: list2.length,
+      q: `${list2.length} items keep landing between ${a.name.split(" › ").at(-1)} and ${b.name.split(" › ").at(-1)}. Are they the same thing, or how do they differ?`,
+      examples: list2.slice(0, 5).map((i) => i.text),
+      order: 0.5 - list2.length / 1e3,
+      now: true
+    };
+  });
+}
+const placeQ = (i, index) => ({
+  id: "i:" + i.id,
+  kind: "place",
+  item: i.id,
+  q: i.text,
+  context: i.context,
+  quote: i.quote,
+  call: i.call,
+  at: i.at,
+  date: i.date,
+  guess: i.branch,
+  guessName: pathName(index, i.branch),
+  conf: i.conf,
+  why: reviewWhy(i),
+  mixed: i.mixed,
+  alts: (i.alts || []).map((a) => ({ ...a, name: pathName(index, a.branch) })),
+  newBranch: i.new_branch,
+  order: 1.5 + (1 - (i.conf || 0)) * 0.5
+});
+const reviewWhy = (i) => i.mixed ? `Uses a word two ways: ${i.mixed}` : i.disagree ? `Two readers disagree: Jev says one branch, Claude another` : `${Math.round((i.conf || 0) * 100)}% sure, under the ${Math.round(FILE_AT * 100)}% bar`;
+function view(id) {
+  const s = load(id), lib2 = LIBS.get(id), index = flat(s.tree.branches);
+  const byBranch = {};
+  const bump = (bid, key) => {
+    for (const p of pathOf(index, bid)) {
+      const b = byBranch[p.id] ||= { items: 0, need: 0, now: 0 };
+      b[key]++;
+    }
+  };
+  for (const i of Object.values(s.items)) if (i.filed && !i.dup && i.branch !== "none") bump(i.branch, "items");
+  const qs = questions(id);
+  for (const q of qs) for (const bid of q.kind === "thread" ? [s.threads[q.thread].branch] : q.kind === "tree" ? [q.a.id, q.b.id] : q.kind === "group" ? [q.branch] : [q.guess]) {
+    bump(bid, "need");
+    if (q.now) bump(bid, "now");
+  }
+  return {
+    id,
+    name: lib2.name,
+    dir: lib2.dir,
+    sources: lib2.sources,
+    fileAt: FILE_AT,
+    jev: JEV_AVAILABLE,
+    tree: s.tree,
+    byBranch,
+    counts: counts(s),
+    calls: Object.values(s.calls).sort((a, b) => b.date.localeCompare(a.date)),
+    items: s.items,
+    threads: s.threads,
+    crosslinks: s.crosslinks,
+    answers: s.answers.slice(-50),
+    questions: qs,
+    job: s.job,
+    version: s.version,
+    estimate: estimate(s),
+    pending: s.corrections.filter((c) => c.at > (s.refreshedAt || "")).length + (s.treeChangedAt > (s.refreshedAt || "") ? 1 : 0)
+  };
+}
+function scan(id) {
+  const s = load(id), lib2 = LIBS.get(id);
+  const seen = new Map(Object.values(s.calls).filter((c) => !c.dupOf).map((c) => [c.hash, c.file]));
+  let added = 0;
+  const files = lib2.sources.filter(existsSync).flatMap((src) => statSync(src).isDirectory() ? readdirSync(src).filter((f) => KINDS.includes(extname(f).toLowerCase()) && !f.startsWith(".")).sort().map((f) => [src, f]) : [[dirname(src), basename(src)]]);
+  for (const [dir, f] of files) {
+    {
+      const known = Object.values(s.calls).find((c2) => c2.file === f && c2.dir === dir);
+      let c;
+      try {
+        c = parseFile(join(dir, f));
+      } catch (e) {
+        if (!known) s.calls["err-" + f] = { id: "err-" + f, file: f, dir, date: "", status: "error", error: e.message };
+        continue;
+      }
+      if (known && known.hash === c.hash) continue;
+      if (known) {
+        for (const i of Object.values(s.items)) if (i.call === known.id) delete s.items[i.id];
+        delete s.calls[known.id];
+        seen.delete(known.hash);
+      }
+      const { text, ...meta2 } = c;
+      const dupOf = seen.get(c.hash);
+      const callId = dupOf && dupOf !== f ? `${c.hash}~${f}` : c.hash;
+      if (s.calls[callId]) continue;
+      s.calls[callId] = { id: callId, ...meta2, dir, chars: text.length, note: !meta2.speakers.length && /\.(md|txt)$/i.test(f), status: dupOf && dupOf !== f ? "dup" : "new", dupOf: dupOf && dupOf !== f ? dupOf : null, items: 0 };
+      if (!dupOf) {
+        seen.set(c.hash, f);
+        added++;
+      }
+    }
+  }
+  save(id);
+  return { added, ...counts(s) };
+}
+function estimate(s) {
+  const calls = Object.values(s.calls).filter((c) => c.status === "new");
+  const tree = JSON.stringify(s.tree.branches).length / 3;
+  const chars = calls.reduce((a, c) => a + c.chars, 0);
+  const tokens = chars / 4 + calls.length * tree / 4;
+  return { calls: calls.length, usd: Math.round((tokens * SONNET_IN + chars / 4 * 0.25 * SONNET_OUT + calls.length * 0.05) * 100) / 100 };
+}
+function processLibrary(id, { model, only } = {}) {
+  const s = load(id);
+  if (s.job?.running) throw new Error("Already processing");
+  model = resolveModel(model || "claude-sonnet-5-5");
+  s.job = { running: true, stage: "Reading calls", done: 0, total: 0, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model };
+  save(id);
+  pipeline(id, model, only).catch((e) => note(id, `Stopped: ${e.message}`)).finally(() => {
+    s.job.running = false;
+    s.job.stage = "Done";
+    save(id, true);
+  });
+  return s.job;
+}
+function stop(id) {
+  const s = load(id);
+  if (s.job?.running) {
+    s.job.stop = true;
+    note(id, "Stopping after the calls in flight");
+  }
+}
+function note(id, text) {
+  const s = load(id);
+  s.job.log.push({ t: (/* @__PURE__ */ new Date()).toISOString(), text });
+  if (s.job.log.length > 60) s.job.log.shift();
+  save(id);
+}
+async function pool(list2, n, fn) {
+  const queue = [...list2];
+  await Promise.all(Array.from({ length: Math.min(n, queue.length) }, async () => {
+    while (queue.length) await fn(queue.shift());
+  }));
+}
+async function pipeline(id, model, only) {
+  const s = load(id), lib2 = LIBS.get(id);
+  const todo = Object.values(s.calls).filter((c) => (c.status === "new" || c.status === "error" && c.hash) && (!only || c.file.includes(only)));
+  const parts = todo.flatMap((c) => {
+    const text = parseFile(join(c.dir, c.file)).text;
+    const cs = chunks(text);
+    return cs.map((t, i) => ({ call: c, part: i + 1, parts: cs.length, text: t }));
+  });
+  s.job.total = parts.length;
+  s.job.stage = `Reading ${todo.length} call(s)`;
+  note(id, `Reading ${todo.length} call(s) in ${parts.length} part(s) with ${model}`);
+  const fresh = [];
+  const index = () => flat(s.tree.branches);
+  const done = /* @__PURE__ */ new Map();
+  await pool(parts, CONCURRENCY, async (p) => {
+    if (s.job.stop) return;
+    try {
+      const res = await callModel({
+        model,
+        system: SYSTEM,
+        kind: "extract",
+        schema: SCHEMAS.extract,
+        prompt: extractPrompt({ library: lib2, call: p.call, part: p.part, parts: p.parts, text: p.text, tree: s.tree.branches, glossary: glossary(s) })
+      });
+      s.cost += res.cost;
+      const idx = index();
+      for (const it of res.out.items) {
+        const iid = `${p.call.hash.slice(0, 6)}-${++s.seq}`;
+        const branch = idx.has(it.branch) ? it.branch : "none";
+        s.items[iid] = {
+          id: iid,
+          call: p.call.id,
+          file: p.call.file,
+          date: p.call.date,
+          part: p.part,
+          ...p.call.note ? { note: true } : {},
+          ...it,
+          claudeBranch: branch,
+          claudeConf: it.confidence,
+          branch,
+          conf: it.confidence,
+          placed: false,
+          filed: false
+        };
+        fresh.push(iid);
+      }
+      p.call.summary = [p.call.summary, res.out.summary].filter(Boolean).join(" ");
+      p.call.items = (p.call.items || 0) + res.out.items.length;
+      done.set(p.call.id, (done.get(p.call.id) || 0) + 1);
+      if (done.get(p.call.id) === p.parts) p.call.status = "done";
+      s.job.done++;
+      note(id, `${p.call.title}${p.parts > 1 ? ` (${p.part}/${p.parts})` : ""}: ${res.out.items.length} items`);
+    } catch (e) {
+      p.call.status = "error";
+      p.call.error = String(e.message || e).slice(0, 300);
+      s.job.done++;
+      note(id, `${p.call.title}: failed (${p.call.error.slice(0, 120)})`);
+    }
+  });
+  for (const c of todo) if (c.status === "error") {
+    for (const i of Object.values(s.items)) if (i.call === c.id) delete s.items[i.id];
+  }
+  await placeItems(id, fresh.filter((i) => s.items[i]));
+  await rebuildThreads(id, model, changedScopes(s, index()));
+  await weighQuestions(id);
+  note(id, `Done: ${fresh.length} new items, ${counts(s).review} to check, ${counts(s).open} open threads. Spent $${s.cost.toFixed(2)} so far.`);
+}
+function glossary(s) {
+  const senses = {};
+  for (const i of Object.values(s.items)) for (const t of i.terms || []) {
+    const k = t.term.toLowerCase().trim();
+    (senses[k] ||= /* @__PURE__ */ new Set()).add(t.sense.toLowerCase().trim());
+  }
+  return Object.entries(senses).filter(([, v]) => v.size > 1).slice(0, 40).map(([term, v]) => ({ term, senses: [...v].slice(0, 4) }));
+}
+const PLACE_BATCH = 20;
+async function placeItems(id, ids) {
+  const s = load(id);
+  if (!ids.length) return;
+  s.job.stage = `Filing ${ids.length} item(s)`;
+  const index = flat(s.tree.branches);
+  if (!JEV_AVAILABLE) {
+    for (const iid of ids) {
+      settle(s.items[iid], s.items[iid].claudeBranch, s.items[iid].claudeConf ?? 0, [], "claude", index);
+      s.items[iid].ctx = ctxKey(s);
+    }
+    note(id, "Filed with Claude's own confidence (no Jev key set)");
+    return save(id);
+  }
+  const per = {};
+  const examples = s.corrections.slice().reverse().filter((c) => index.has(c.branch) && (per[c.branch] = (per[c.branch] || 0) + 1) <= 2).slice(0, 40).map((c) => `"${c.text}" belongs in ${pathName(index, c.branch)}`);
+  let walking = ids.map((iid) => ({ iid, at: null, p: 1, path: [], alts: [] }));
+  for (let depth = 0; walking.length && depth < 8; depth++) {
+    const groups = {};
+    for (const w of walking) (groups[w.at ?? "_root"] ||= []).push(w);
+    const next = [];
+    for (const [at, ws] of Object.entries(groups)) {
+      const node = at === "_root" ? null : index.get(at);
+      const kids = node ? node.children || [] : s.tree.branches;
+      if (!kids.length) {
+        ws.forEach((w) => finish(w));
+        continue;
+      }
+      const criteria = Object.fromEntries(kids.map((k) => [k.id, `${k.name}${k.desc ? ": " + k.desc : ""}`]));
+      if (node) criteria.here = `${node.name} in general, not one particular part of it`;
+      else criteria.none = "Not about this business (personal, small talk, other ventures)";
+      for (let b = 0; b < ws.length; b += PLACE_BATCH) {
+        const batch = ws.slice(b, b + PLACE_BATCH);
+        const state = {
+          business: s.tree.name,
+          branch: node ? pathName(index, node.id) : "the whole business",
+          items: batch.map((w) => {
+            const i = s.items[w.iid];
+            return `${i.text} (context: ${i.context})`;
+          }),
+          ...examples.length ? { past_corrections: examples } : {}
+        };
+        const questions2 = Object.fromEntries(batch.map((w, k) => [`q${k}`, { type: "choice", instructions: `Where in \`branch\` does \`items[${k}]\` belong?`, criteria }]));
+        let r;
+        try {
+          r = await jevAsk(state, questions2);
+        } catch (e) {
+          note(id, `Jev failed, Claude's filing stands for ${batch.length} item(s): ${e.message.slice(0, 80)}`);
+          batch.forEach((w) => (w.fail = true, finish(w)));
+          continue;
+        }
+        s.cost += r.cost;
+        batch.forEach((w, k) => {
+          const probs = Object.entries(r.a[`q${k}`].probabilities).sort((a, b2) => b2[1] - a[1]);
+          const [best, pb] = probs[0];
+          if (probs[1] && probs[1][1] > 0.02) w.alts.push({ branch: probs[1][0] === "here" ? at : probs[1][0], p: w.p * probs[1][1] });
+          w.p *= pb;
+          if (best === "here" || best === "none") {
+            w.at = best === "none" ? "none" : at;
+            return finish(w);
+          }
+          w.at = best;
+          w.path.push({ id: best, p: w.p });
+          next.push(w);
+        });
+      }
+    }
+    walking = next;
+  }
+  walking.forEach(finish);
+  const ctx = ctxKey(s);
+  for (const iid of ids) if (s.items[iid]) s.items[iid].ctx = ctx;
+  function finish(w) {
+    const i = s.items[w.iid];
+    if (w.fail) return settle(i, i.claudeBranch, i.claudeConf ?? 0, [], "claude", index);
+    settle(i, w.at || "none", w.p, w.alts.filter((a) => a.branch && a.branch !== "_root").sort((a, b) => b.p - a.p).slice(0, 3), "jev", index, w.path);
+  }
+  save(id);
+}
+function settle(i, guess, conf, alts, by, index, path = []) {
+  const c = i.claudeBranch;
+  const agree = by === "claude" || guess === c || guess !== "none" && c !== "none" && (within(index, guess, c) || within(index, c, guess));
+  if (c !== guess && !alts.some((a) => a.branch === c) && c !== "none") alts = [...alts, { branch: c, p: i.claudeConf ?? 0, by: "claude" }].slice(0, 4);
+  const clears = by === "jev" ? path.filter((x) => x.p >= FILE_AT).at(-1) : conf >= FILE_AT ? { id: guess, p: conf } : null;
+  const top = guess === "none" ? conf >= FILE_AT ? { id: "none", p: conf } : null : clears;
+  Object.assign(i, { guess, guessConf: Math.round(conf * 1e3) / 1e3, alts, by, placed: true, disagree: !agree });
+  i.offtopic = guess === "none" && conf >= FILE_AT && c === "none";
+  i.filed = !i.offtopic && !!top && agree && !i.mixed;
+  i.branch = i.filed ? top.id : guess;
+  i.conf = Math.round((i.filed ? top.p : conf) * 1e3) / 1e3;
+  i.finer = i.filed && top.id !== guess ? { branch: guess, p: i.guessConf } : null;
+}
+async function rebuildThreads(id, model, scopes) {
+  const s = load(id), lib2 = LIBS.get(id);
+  const index = flat(s.tree.branches);
+  scopes.delete("none");
+  if (!scopes.size) return;
+  s.job.stage = `Tying topics together in ${scopes.size} branch(es)`;
+  s.job.total += scopes.size;
+  await pool([...scopes], CONCURRENCY, async (scope) => {
+    if (s.job.stop) return;
+    const items = Object.values(s.items).filter((i) => threadable(i) && scopeOf(index, home(i)) === scope).sort((a, b) => a.date.localeCompare(b.date));
+    const existing0 = Object.values(s.threads).filter((t) => t.scope === scope);
+    if (!items.length) {
+      existing0.forEach((t) => delete s.threads[t.id]);
+      delete s.scopeSig[scope];
+      s.job.done++;
+      return;
+    }
+    const existing = Object.values(s.threads).filter((t) => t.scope === scope);
+    try {
+      const res = await callModel({ model, system: SYSTEM, kind: "threads", schema: SCHEMAS.threads, prompt: threadsPrompt({ library: lib2, path: pathName(index, scope), items, existing }) });
+      s.cost += res.cost;
+      const answered = new Map(existing.filter((t) => t.answeredBy).map((t) => [t.id, t]));
+      for (const t of existing) delete s.threads[t.id];
+      for (const t of res.out.threads) {
+        const its = t.items.filter((x) => s.items[x]);
+        if (!its.length) continue;
+        const tally = {};
+        its.forEach((x) => tally[home(s.items[x])] = (tally[home(s.items[x])] || 0) + 1);
+        const branch = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
+        const prev = answered.get(t.id);
+        s.threads[t.id] = {
+          ...t,
+          items: its,
+          scope,
+          branch,
+          unconfirmed: its.filter((x) => !s.items[x].filed).length,
+          first: s.items[its[0]].date,
+          last: its.map((x) => s.items[x].date).sort().at(-1),
+          ...prev && t.status !== "decided" ? { status: "decided", decision: prev.decision, answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {},
+          ...prev && t.status === "decided" ? { answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {}
+        };
+      }
+      s.scopeSig[scope] = sig(items);
+      s.job.done++;
+      note(id, `${pathName(index, scope)}: ${res.out.threads.length} thread(s)`);
+    } catch (e) {
+      s.job.done++;
+      note(id, `${pathName(index, scope)}: threads failed (${String(e.message).slice(0, 120)})`);
+    }
+  });
+  save(id);
+}
+const sig = (items) => items.map((i) => i.id).sort().join(",");
+function changedScopes(s, index) {
+  const now = {};
+  for (const i of Object.values(s.items)) if (threadable(i)) (now[scopeOf(index, home(i))] ||= []).push(i);
+  const out = new Set(Object.keys(now).filter((k) => s.scopeSig[k] !== sig(now[k])));
+  for (const k of Object.keys(s.scopeSig)) if (!now[k]) out.add(k);
+  for (const t of Object.values(s.threads)) if (!now[t.scope]) out.add(t.scope);
+  return out;
+}
+async function weighQuestions(id) {
+  const s = load(id);
+  if (!JEV_AVAILABLE) return;
+  const ts = Object.values(s.threads).filter((t) => ["unsettled", "open", "assumed"].includes(t.status) && t.question?.q && t.weight === void 0);
+  for (let b = 0; b < ts.length; b += 25) {
+    const batch = ts.slice(b, b + 25);
+    const questions2 = Object.fromEntries(batch.map((t, k) => [`w${k}`, { type: "noul", instructions: `Would the owner's answer to \`questions[${k}]\` change what ${s.tree.name} builds, sends, charges or decides next?` }]));
+    try {
+      const r = await jevAsk({ business: s.tree.name, questions: batch.map((t) => `${t.question.q} (topic: ${t.title}; ${t.summary})`) }, questions2);
+      s.cost += r.cost;
+      batch.forEach((t, k) => t.weight = r.a[`w${k}`].noul);
+    } catch {
+      break;
+    }
+  }
+  save(id);
+}
+function answer(id, { qid, text, branch, newBranch, skip, items }) {
+  const s = load(id), index = flat(s.tree.branches);
+  const at = (/* @__PURE__ */ new Date()).toISOString();
+  if (skip) {
+    if (items?.length) for (const x of items) s.snoozed[(qid.startsWith("f:") ? "f:" : "i:") + x] = at;
+    else s.snoozed[qid] = at;
+    save(id);
+    return { ok: true };
+  }
+  const [kind, key] = [qid.slice(0, 1), qid.slice(2)];
+  if (kind === "b") return sharpen(id, key, arguments[1]);
+  if (kind === "t") {
+    const t = s.threads[key];
+    if (!t) throw new Error("No such thread");
+    if (!text?.trim()) throw new Error("Write an answer, or skip");
+    Object.assign(t, { status: "decided", decision: text.trim(), answeredBy: "owner", answeredAt: at });
+    s.answers.push({ at, thread: key, title: t.title, q: t.question?.q, a: text.trim(), where: pathName(index, t.branch) });
+  } else {
+    const i = s.items[key];
+    if (!i) throw new Error("No such item");
+    let target = branch;
+    if (newBranch?.name) {
+      const parent = index.get(newBranch.parent);
+      if (!parent) throw new Error("Pick where the new branch goes");
+      const slug = newBranch.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
+      target = `${parent.id}.${slug}`;
+      const node = findNode(s.tree.branches, parent.id);
+      if (!index.has(target)) (node.children ||= []).push({ id: target, name: newBranch.name.trim(), desc: newBranch.desc || "", from: "review", added: at.slice(0, 10) });
+      s.treeChangedAt = at;
+    }
+    if (!target || target !== "none" && !flat(s.tree.branches).has(target)) throw new Error("Pick a branch");
+    Object.assign(i, { branch: target, conf: 1, by: "owner", filed: target !== "none", offtopic: target === "none", disagree: false, finer: null });
+    s.corrections.push({ at, text: i.text, branch: target });
+    s.answers.push({ at, item: key, q: i.text, a: pathName(flat(s.tree.branches), target) });
+  }
+  save(id);
+  return { ok: true };
+}
+function sharpen(id, key, { merge, describe }) {
+  const s = load(id), index = flat(s.tree.branches), at = (/* @__PURE__ */ new Date()).toISOString();
+  const [a, b] = key.split("|");
+  if (merge) {
+    const keep = merge, gone = merge === a ? b : a;
+    const parentOf = index.get(gone).parent;
+    const list2 = parentOf ? findNode(s.tree.branches, parentOf).children : s.tree.branches;
+    const node = list2.splice(list2.findIndex((n) => n.id === gone), 1)[0];
+    const into = findNode(s.tree.branches, keep);
+    (into.children ||= []).push(...node.children || []);
+    into.desc = [into.desc, `Includes what was "${node.name}".`].filter(Boolean).join(" ");
+    const move = (x) => x === gone ? keep : x;
+    for (const i of Object.values(s.items)) {
+      i.branch = move(i.branch);
+      i.guess = move(i.guess);
+      i.claudeBranch = move(i.claudeBranch);
+      if (i.finer) i.finer.branch = move(i.finer.branch);
+      i.alts = (i.alts || []).map((x) => ({ ...x, branch: move(x.branch) }));
+    }
+    for (const t of Object.values(s.threads)) t.branch = move(t.branch);
+    for (const c of s.corrections) c.branch = move(c.branch);
+    s.answers.push({ at, q: `Merge ${node.name} into ${into.name}?`, a: "Merged" });
+  } else {
+    for (const [bid, text] of Object.entries(describe || {})) {
+      if (!text?.trim() || ![a, b].includes(bid)) continue;
+      const n = findNode(s.tree.branches, bid);
+      n.desc = text.trim();
+    }
+    s.answers.push({ at, q: `How do ${pathName(index, a)} and ${pathName(index, b)} differ?`, a: Object.values(describe || {}).join(" / ") });
+  }
+  s.resolvedPairs[key] = at;
+  s.treeChangedAt = at;
+  save(id);
+  return { ok: true };
+}
+const findNode = (nodes2, id) => {
+  for (const n of nodes2) {
+    if (n.id === id) return n;
+    const f = findNode(n.children || [], id);
+    if (f) return f;
+  }
+  return null;
+};
+const ctxKey = (s) => `${s.treeChangedAt || ""}|${s.corrections.length}`;
+const retry = (s) => {
+  const index = flat(s.tree.branches), ctx = ctxKey(s);
+  return Object.values(s.items).filter((i) => i.by !== "owner" && i.placed && (!i.filed && i.ctx !== ctx || !index.has(i.branch) || i.finer && !index.has(i.finer.branch))).map((i) => i.id);
+};
+async function refile(id) {
+  const s = load(id);
+  if (s.job?.running) throw new Error("Already processing");
+  s.tree = (() => {
+    try {
+      return JSON.parse(readFileSync(join(LIBS.get(id).dir, "tree.json"), "utf8"));
+    } catch {
+      return s.tree;
+    }
+  })();
+  const ids = retry(s);
+  s.job = { running: true, stage: "Filing again", done: 0, total: 0, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model: "" };
+  try {
+    await placeItems(id, ids);
+    note(id, `Filed ${ids.length} item(s) again: ${counts(s).filed} filed, ${counts(s).review} to check`);
+  } finally {
+    s.job.running = false;
+    s.job.stage = "Done";
+    save(id, true);
+  }
+  return counts(s);
+}
+function confirmAll(id, { items }) {
+  const s = load(id), at = (/* @__PURE__ */ new Date()).toISOString();
+  for (const key of items || []) {
+    const i = s.items[key];
+    if (!i || !(needsReview(i) || i.finer)) continue;
+    const branch = i.finer ? i.finer.branch : i.branch;
+    Object.assign(i, { branch, conf: 1, by: "owner", filed: branch !== "none", offtopic: branch === "none", disagree: false, finer: null });
+    s.corrections.push({ at, text: i.text, branch });
+  }
+  s.answers.push({ at, q: `${(items || []).length} items confirmed together`, a: "as guessed" });
+  save(id);
+  return counts(s);
+}
+async function refresh(id, { model } = {}) {
+  const s = load(id);
+  if (s.job?.running) throw new Error("Already processing");
+  s.job = { running: true, stage: "Filing again", done: 0, total: 0, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model: resolveModel(model || "claude-sonnet-5-5") };
+  save(id);
+  (async () => {
+    await placeItems(id, retry(s));
+    note(id, `Filed again: ${counts(s).filed} filed, ${counts(s).review} to check`);
+    await rebuildThreads(id, s.job.model, changedScopes(s, flat(s.tree.branches)));
+    await weighQuestions(id);
+    s.refreshedAt = (/* @__PURE__ */ new Date()).toISOString();
+  })().catch((e) => note(id, `Stopped: ${e.message}`)).finally(() => {
+    s.job.running = false;
+    s.job.stage = "Done";
+    save(id, true);
+  });
+  return s.job;
+}
+function crosscheck(id, { model } = {}) {
+  const s = load(id), lib2 = LIBS.get(id), index = flat(s.tree.branches);
+  if (s.job?.running) throw new Error("Already processing");
+  model = resolveModel(model || "claude-opus-5-5");
+  s.job = { running: true, stage: "Cross-checking every branch", done: 0, total: 1, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model };
+  save(id);
+  (async () => {
+    const threads = Object.values(s.threads).map((t) => ({ ...t, path: pathName(index, t.branch) }));
+    const res = await callModel({ model, system: SYSTEM, kind: "crosscheck", schema: SCHEMAS.crosscheck, prompt: crosscheckPrompt({ library: lib2, threads }) });
+    s.cost += res.cost;
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    s.crosslinks = res.out.links.map((l, k) => ({ ...l, id: `x${Date.now()}-${k}`, at, fromName: s.threads[l.from]?.title || pathName(index, l.from), toName: s.threads[l.to]?.title || pathName(index, l.to) }));
+    s.crosscheckSummary = res.out.summary;
+    s.job.done = 1;
+    note(id, `${s.crosslinks.length} link(s) across branches`);
+  })().catch((e) => note(id, `Cross-check failed: ${e.message}`)).finally(() => {
+    s.job.running = false;
+    s.job.stage = "Done";
+    save(id, true);
+  });
+  return s.job;
+}
+const words = (q) => q.toLowerCase().split(/[^a-z0-9$%.-]+/).filter((w) => w.length > 2 && !STOP.has(w));
+const STOP = new Set("the and for that this with what where when did was were about have has from into our you your are how why who which talk talked said say".split(" "));
+function search(id, q) {
+  const s = load(id), index = flat(s.tree.branches);
+  const ws = words(q);
+  if (!ws.length) return { items: [], threads: [], senses: [] };
+  const score = (text) => {
+    const t = text.toLowerCase();
+    return ws.reduce((a, w) => a + (t.includes(w) ? 1 : 0), 0);
+  };
+  const items = Object.values(s.items).filter((i) => !i.dup).map((i) => ({ i, sc: score(`${i.text} ${i.context} ${i.quote} ${(i.terms || []).map((t) => t.term + " " + t.sense).join(" ")}`) })).filter((x) => x.sc > 0).sort((a, b) => b.sc - a.sc || b.i.date.localeCompare(a.i.date)).slice(0, 120).map(({ i }) => ({ ...i, where: pathName(index, i.branch) }));
+  const threads = Object.values(s.threads).map((t) => ({ t, sc: score(`${t.title} ${t.summary} ${t.decision}`) })).filter((x) => x.sc > 0).sort((a, b) => b.sc - a.sc).slice(0, 30).map(({ t }) => ({ ...t, where: pathName(index, t.branch) }));
+  const senses = {};
+  for (const i of items) for (const t of i.terms || []) if (ws.some((w) => t.term.toLowerCase().includes(w))) (senses[`${t.term.toLowerCase()} — ${t.sense.toLowerCase()}`] ||= []).push(i.id);
+  return { items, threads, senses: Object.entries(senses).map(([sense, ids]) => ({ sense, ids })).sort((a, b) => b.ids.length - a.ids.length) };
+}
+async function ask(id, question2, { model } = {}) {
+  const s = load(id), lib2 = LIBS.get(id);
+  const found = search(id, question2);
+  if (!found.items.length && !found.threads.length) return { answer: "Nothing in the record matches those words yet.", cites: [], gaps: [question2] };
+  const res = await callModel({
+    model: resolveModel(model || "claude-sonnet-5-5"),
+    system: SYSTEM,
+    kind: "ask",
+    schema: SCHEMAS.ask,
+    prompt: askPrompt({ library: lib2, question: question2, items: found.items.slice(0, 80).map((i) => ({ ...i, call: i.file })), threads: found.threads.map((t) => ({ ...t, path: t.where })) })
+  });
+  s.cost += res.cost;
+  save(id);
+  return res.out;
+}
 const PORT = Number(process.env.THINK_PORT || 4477);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = join(ROOT, "dist");
@@ -4663,7 +5641,40 @@ const body = (req) => new Promise((resolve, reject) => {
     }
   });
 });
-const ACTIONS = { answer, rerun, correct, stuck, deeper, pick: pick$1, resume, settle };
+const ACTIONS = { answer: answer$1, rerun, correct, stuck, deeper, pick: pick$1, resume, settle: settle$1 };
+function librarySse(req, res, id) {
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+  let timer = null;
+  const send = () => {
+    timer = null;
+    const s = load(id);
+    res.write(`data: ${JSON.stringify({ version: s.version, job: s.job })}
+
+`);
+  };
+  const on = (lid) => {
+    if (lid === id && !timer) timer = setTimeout(send, 400);
+  };
+  send();
+  bus.on("library", on);
+  const ping = setInterval(() => res.write(": ping\n\n"), 2e4);
+  req.on("close", () => {
+    bus.off("library", on);
+    clearInterval(ping);
+    clearTimeout(timer);
+  });
+}
+const LIBRARY_ACTIONS = {
+  scan: (id) => scan(id),
+  process: (id, b) => processLibrary(id, b),
+  refresh: (id, b) => refresh(id, b),
+  crosscheck: (id, b) => crosscheck(id, b),
+  stop: (id) => stop(id),
+  refile: (id) => refile(id),
+  confirm: (id, b) => confirmAll(id, b),
+  answer: (id, b) => answer(id, b),
+  ask: (id, b) => ask(id, b.question, b)
+};
 function sse(req, res, run2) {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
   let timer = null;
@@ -4677,10 +5688,10 @@ function sse(req, res, run2) {
     if (r.id === run2.id && !timer) timer = setTimeout(send, 120);
   };
   send();
-  bus.on("run", onRun);
+  bus$1.on("run", onRun);
   const ping = setInterval(() => res.write(": ping\n\n"), 2e4);
   req.on("close", () => {
-    bus.off("run", onRun);
+    bus$1.off("run", onRun);
     clearInterval(ping);
     clearTimeout(timer);
   });
@@ -4703,6 +5714,15 @@ createServer(async (req, res) => {
         if (!b.text?.trim()) return json(res, 400, { error: "Empty rule" });
         addRule(b.text, b.from || "manual");
         return json(res, 200, { ok: true, file: RULES_FILE });
+      }
+      if (what === "libraries") return json(res, 200, listLibraries());
+      if (what === "library") {
+        if (!getLibrary(id)) return json(res, 404, { error: 'No such library. Add it under "libraries" in ~/.thinking-system/config.json' });
+        if (!action) return json(res, 200, view(id));
+        if (action === "events") return librarySse(req, res, id);
+        if (action === "search") return json(res, 200, search(id, url.searchParams.get("q") || ""));
+        if (LIBRARY_ACTIONS[action] && req.method === "POST") return json(res, 200, { ok: true, result: await LIBRARY_ACTIONS[action](id, await body(req)) });
+        return json(res, 404, { error: "Unknown endpoint" });
       }
       if (what === "runs" && !id && req.method === "GET") return json(res, 200, listRuns());
       if (what === "runs" && !id && req.method === "POST") {

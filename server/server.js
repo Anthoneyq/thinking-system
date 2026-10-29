@@ -9,6 +9,7 @@ import { METHODS } from './methods.js'
 import { toExcalidraw } from './excalidraw.js'
 import { layout } from '../shared/layout.js'
 import { writeRunFile, RUNS_DIR, RULES_FILE, readRules, addRule } from './store.js'
+import * as library from './library/library.js'
 
 const PORT = Number(process.env.THINK_PORT || 4477)
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -24,6 +25,30 @@ const body = req => new Promise((resolve, reject) => {
 })
 
 const ACTIONS = { answer: engine.answer, rerun: engine.rerun, correct: engine.correct, stuck: engine.stuck, deeper: engine.deeper, pick: engine.pick, resume: engine.resume, settle: engine.settle }
+
+// Conversations mode: a library's view is large, so the stream only says when it changed and the page refetches.
+function librarySse(req, res, id) {
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+  let timer = null
+  const send = () => { timer = null; const s = library.load(id); res.write(`data: ${JSON.stringify({ version: s.version, job: s.job })}\n\n`) }
+  const on = lid => { if (lid === id && !timer) timer = setTimeout(send, 400) }
+  send()
+  library.bus.on('library', on)
+  const ping = setInterval(() => res.write(': ping\n\n'), 20000)
+  req.on('close', () => { library.bus.off('library', on); clearInterval(ping); clearTimeout(timer) })
+}
+
+const LIBRARY_ACTIONS = {
+  scan: id => library.scan(id),
+  process: (id, b) => library.processLibrary(id, b),
+  refresh: (id, b) => library.refresh(id, b),
+  crosscheck: (id, b) => library.crosscheck(id, b),
+  stop: id => library.stop(id),
+  refile: id => library.refile(id),
+  confirm: (id, b) => library.confirmAll(id, b),
+  answer: (id, b) => library.answer(id, b),
+  ask: (id, b) => library.ask(id, b.question, b),
+}
 
 function sse(req, res, run) {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
@@ -51,6 +76,15 @@ createServer(async (req, res) => {
         if (!b.text?.trim()) return json(res, 400, { error: 'Empty rule' })
         addRule(b.text, b.from || 'manual')
         return json(res, 200, { ok: true, file: RULES_FILE })
+      }
+      if (what === 'libraries') return json(res, 200, library.listLibraries())
+      if (what === 'library') {
+        if (!library.getLibrary(id)) return json(res, 404, { error: 'No such library. Add it under "libraries" in ~/.thinking-system/config.json' })
+        if (!action) return json(res, 200, library.view(id))
+        if (action === 'events') return librarySse(req, res, id)
+        if (action === 'search') return json(res, 200, library.search(id, url.searchParams.get('q') || ''))
+        if (LIBRARY_ACTIONS[action] && req.method === 'POST') return json(res, 200, { ok: true, result: await LIBRARY_ACTIONS[action](id, await body(req)) })
+        return json(res, 404, { error: 'Unknown endpoint' })
       }
       if (what === 'runs' && !id && req.method === 'GET') return json(res, 200, engine.listRuns())
       if (what === 'runs' && !id && req.method === 'POST') {
