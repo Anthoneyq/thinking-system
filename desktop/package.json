@@ -50,6 +50,12 @@
           "arch": [
             "arm64"
           ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "artifactName": "Click here to install (Mac).dmg",

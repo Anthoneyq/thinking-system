@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createServer } from 'node:net'
+import { homedir } from 'node:os'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const TEAM = JSON.parse(readFileSync(join(HERE, 'team.json'), 'utf8'))
@@ -102,6 +103,21 @@ async function start() {
   win.loadURL(`http://127.0.0.1:${port}/library/${TEAM.library}`)
 }
 
+// On the Mac that reads calls (its own config marks the library as the reader), the app is that Mac's copy: no
+// sign-in, it opens the running Thinking System or starts it, and reads and syncs while open.
+function readerConfig() {
+  try { return JSON.parse(readFileSync(join(homedir(), '.thinking-system', 'config.json'), 'utf8')).libraries.some(l => l.id === TEAM.library && l.sync?.role === 'reader') } catch { return false }
+}
+async function startReader() {
+  const url = `http://127.0.0.1:4477/library/${TEAM.library}`
+  try { if ((await fetch('http://127.0.0.1:4477/api/health')).ok) return win.loadURL(url) } catch {}
+  // Opened from the Dock, the app doesn't get the shell's PATH; claude and gh live in these.
+  process.env.PATH = [join(homedir(), '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin', process.env.PATH].join(':')
+  await import(pathToFileURL(join(HERE, 'bundle', 'app', 'server.mjs')).href)
+  for (let k = 0; k < 50; k++) { try { if ((await fetch('http://127.0.0.1:4477/api/health')).ok) break } catch {} await new Promise(r => setTimeout(r, 100)) }
+  win.loadURL(url)
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
@@ -111,5 +127,5 @@ app.whenReady().then(() => {
   ]))
   win = new BrowserWindow({ width: 1400, height: 900, title: TEAM.name, backgroundColor: '#f4f5f7', autoHideMenuBar: true })
   wire()
-  start().catch(e => { actions.retry = () => start().catch(() => {}); show('Problem', `<h1>Something went wrong</h1><p>${String(e.message || e).replace(/</g, '&lt;')}</p><a class="btn" href="app:retry">Try again</a>`) })
+  ;(readerConfig() ? startReader : start)().catch(e => { actions.retry = () => start().catch(() => {}); show('Problem', `<h1>Something went wrong</h1><p>${String(e.message || e).replace(/</g, '&lt;')}</p><a class="btn" href="app:retry">Try again</a>`) })
 })
