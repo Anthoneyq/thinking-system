@@ -10,6 +10,7 @@ import { toExcalidraw } from './excalidraw.js'
 import { layout } from '../shared/layout.js'
 import { writeRunFile, RUNS_DIR, RULES_FILE, readRules, addRule } from './store.js'
 import * as library from './library/library.js'
+import * as sync from './library/sync.js'
 
 const PORT = Number(process.env.THINK_PORT || 4477)
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -45,7 +46,11 @@ const LIBRARY_ACTIONS = {
   crosscheck: (id, b) => library.crosscheck(id, b),
   stop: id => library.stop(id),
   refile: id => library.refile(id),
-  answer: (id, b) => library.answer(id, b),
+  // Edits go through the change log, so the team sees who changed what and every copy can replay it.
+  answer: (id, b) => library.change(id, { kind: 'answer', body: b }),
+  change: (id, b) => library.change(id, b),
+  upload: (id, b) => { for (const f of b.files || []) sync.addTranscript(id, f.name, f.data); return library.change(id, { kind: 'transcript', file: (b.files || []).map(f => f.name).join(', ') }) },
+  sync: id => sync.sync(id),
   ask: (id, b) => library.ask(id, b.question, b),
 }
 
@@ -118,4 +123,4 @@ createServer(async (req, res) => {
   } catch (e) {
     json(res, 400, { error: String(e.message || e) })
   }
-}).listen(PORT, '127.0.0.1', () => console.log(`Thinking System on http://localhost:${PORT}  (runs in ${RUNS_DIR})`))
+}).listen(PORT, '127.0.0.1', () => { console.log(`Thinking System on http://localhost:${PORT}  (runs in ${RUNS_DIR})`); sync.startSync(library.listLibraries().map(l => l.id)) })

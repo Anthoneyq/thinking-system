@@ -1,0 +1,7 @@
+{
+  "name": "Acme Conversations",
+  "library": "acme",
+  "libraryName": "Acme Co",
+  "repo": "your-github/acme-conversations",
+  "clientId": "GitHub OAuth app client ID, with Device Flow enabled"
+}

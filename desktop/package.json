@@ -1,0 +1,67 @@
+{
+  "name": "conversations-team-app",
+  "productName": "Conversations",
+  "version": "1.0.0",
+  "description": "A team copy of a Conversations library, synced through a private GitHub repo",
+  "author": "Anthoney Q",
+  "type": "module",
+  "main": "main.mjs",
+  "private": true,
+  "scripts": {
+    "start": "node bundle.mjs && electron .",
+    "win": "node bundle.mjs win",
+    "mac": "node bundle.mjs mac"
+  },
+  "build": {
+    "appId": "com.anthoneyq.conversations",
+    "productName": "Conversations",
+    "files": [
+      "main.mjs",
+      "team.json",
+      "bundle/**/*",
+      "bundle/.claude-plugin/*"
+    ],
+    "directories": {
+      "output": "out"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Conversations",
+      "artifactName": "Click here to install.exe"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Click here to install (Mac).dmg",
+      "identity": null
+    },
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^26.18.0"
+  }
+}

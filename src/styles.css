@@ -474,3 +474,18 @@ blockquote cite { display: block; font-style: normal; font-size: 12px; color: va
 .lib-rules table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .lib-rules th, .lib-rules td { text-align: left; padding: 4px 6px; border-top: 1px solid var(--line-2); vertical-align: top; }
 @media (max-width: 520px) { .lib-rules th:nth-child(2), .lib-rules td:nth-child(2) { display: none; } }
+
+/* Team sync and the change log */
+.lib-sync { align-self: center; white-space: nowrap; }
+.lib-sync.err { color: var(--red); }
+.lib-claim { background: var(--accent-soft); padding: 8px 12px; border-radius: 8px; margin: 0 0 10px; }
+.lib-branch-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.lib-branch-head h3 { margin-right: auto; }
+.lib-edit { display: grid; gap: 8px; margin: 8px 0 12px; }
+.lib-edit input, .lib-edit textarea, .lib-edit select { width: 100%; box-sizing: border-box; }
+.lib-log-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.lib-log-list li { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.lib-log-list p { margin: 4px 0; }
+.lib-diff { display: grid; gap: 4px; font-size: .92em; white-space: pre-wrap; }
+.lib-diff del { opacity: .7; }
+.lib-diff ins { text-decoration: none; border-left: 3px solid var(--accent); padding-left: 6px; }

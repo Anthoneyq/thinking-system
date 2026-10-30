@@ -606,14 +606,14 @@ function loadRuns() {
     }
   }).filter(Boolean);
 }
-function saveRun(run2, now = false) {
+function saveRun(run2, now2 = false) {
   const write2 = () => {
     timers$1.delete(run2.id);
     mkdirSync(runDir(run2), { recursive: true });
     writeFileSync(join(runDir(run2), "run.json"), JSON.stringify(run2, null, 2));
   };
   clearTimeout(timers$1.get(run2.id));
-  if (now) return write2();
+  if (now2) return write2();
   timers$1.set(run2.id, setTimeout(write2, 300));
 }
 function writeRunFile(run2, name, content) {
@@ -870,10 +870,10 @@ function add(run2, { kind, scope, title, deps = [], data = {}, status = "queued"
   run2.order.push(id);
   return run2.nodes[id];
 }
-function changed(run2, now = false) {
+function changed(run2, now2 = false) {
   run2.status = statusOf(run2);
   run2.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  saveRun(run2, now);
+  saveRun(run2, now2);
   bus$1.emit("run", run2);
 }
 function statusOf(run2) {
@@ -961,12 +961,12 @@ Combination: ${narrow.out.combine}` : ""));
 }
 function tick(run2) {
   if (run2.paused) return changed(run2);
-  let running = active(run2).filter((n) => n.status === "running").length;
+  let running2 = active(run2).filter((n) => n.status === "running").length;
   for (const n of active(run2)) {
-    if (running >= CONCURRENCY$1) break;
+    if (running2 >= CONCURRENCY$1) break;
     if (n.status !== "queued") continue;
     if (!n.deps.every((d) => run2.nodes[d]?.status === "done")) continue;
-    running++;
+    running2++;
     start(run2, n);
   }
   changed(run2);
@@ -1191,11 +1191,11 @@ function after(run2, node, E, opts) {
   }
 }
 function createRun({ input, model, effort, handsOff = false, jev: useJev }) {
-  const now = /* @__PURE__ */ new Date();
+  const now2 = /* @__PURE__ */ new Date();
   const words2 = input.split("\n").filter((l) => !l.startsWith("--- ")).join(" ").toLowerCase().match(/[a-z0-9]+/g);
   const slug = (words2 || ["thought"]).slice(0, 5).join("-").slice(0, 40);
   model = resolveModel(model);
-  const id = `${now.toISOString().slice(0, 10)}-${slug}-${Math.random().toString(36).slice(2, 6)}`;
+  const id = `${now2.toISOString().slice(0, 10)}-${slug}-${Math.random().toString(36).slice(2, 6)}`;
   const run2 = {
     id,
     title: input.trim().split("\n").find((l) => l.trim() && !l.startsWith("--- "))?.slice(0, 70) || "Thought",
@@ -1203,7 +1203,7 @@ function createRun({ input, model, effort, handsOff = false, jev: useJev }) {
     model,
     effort: EFFORT[effort] ? effort : "normal",
     handsOff: !!handsOff,
-    createdAt: now.toISOString(),
+    createdAt: now2.toISOString(),
     status: "running",
     jev: JEV_AVAILABLE && (useJev ?? model !== "dry"),
     seq: 0,
@@ -4646,14 +4646,14 @@ function layout(run2, scope = "root", showOld = false) {
   return { visible, edges, positions };
 }
 const KINDS = [".vtt", ".docx", ".md", ".txt"];
-const clock = (s) => s.replace(/\.\d+$/, "").replace(/^00:/, "");
+const clock$1 = (s) => s.replace(/\.\d+$/, "").replace(/^00:/, "");
 function vtt(text) {
   const turns = [];
   for (const block of text.replace(/\r/g, "").split(/\n\n+/)) {
     const lines = block.split("\n");
     const t = lines.findIndex((l) => l.includes("-->"));
     if (t < 0) continue;
-    const at = clock(lines[t].split("-->")[0].trim());
+    const at = clock$1(lines[t].split("-->")[0].trim());
     let body2 = lines.slice(t + 1).join(" ").trim();
     const v = body2.match(/^<v ([^>]+)>/) || body2.match(/^([A-Z][^:<>]{1,40}):\s/);
     const who = v ? person(v[1]) : "";
@@ -4986,7 +4986,7 @@ function load(id) {
   return s;
 }
 let timers = {};
-function save(id, now = false) {
+function save(id, now2 = false) {
   const s = states.get(id), lib2 = LIBS.get(id);
   s.version++;
   bus.emit("library", id);
@@ -4999,7 +4999,7 @@ function save(id, now = false) {
     writeMarkdown(lib2, s, view(id));
   };
   clearTimeout(timers[id]);
-  if (now) return write2();
+  if (now2) return write2();
   timers[id] = setTimeout(write2, 800);
 }
 const flat = (nodes2, parent = null, depth = 0, out = /* @__PURE__ */ new Map()) => {
@@ -5205,6 +5205,11 @@ function view(id) {
     if (i.filed) bump(i.branch, "filed");
   }
   const qs = questions(id);
+  const fresh = Date.now() - CLAIM_MIN * 6e4;
+  for (const q of qs) {
+    const c = s.claims?.[q.id];
+    if (c && c.by !== me(id) && Date.parse(c.at) > fresh) q.claimedBy = c.by;
+  }
   for (const q of qs) for (const bid of q.kind === "thread" ? [s.threads[q.thread].branch] : q.kind === "tree" ? [q.a.id, q.b.id] : q.kind === "place" ? [q.guess] : []) {
     bump(bid, "need");
     if (q.now) bump(bid, "now");
@@ -5229,6 +5234,10 @@ function view(id) {
     job: s.job,
     version: s.version,
     estimate: estimate(s, id),
+    me: me(id),
+    member: lib2.sync?.role === "member",
+    sync: lib2.sync ? { repo: lib2.sync.repo, role: lib2.sync.role, ...s.syncState, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
+    log: (s.log || []).slice(-300).reverse(),
     pending: s.corrections.filter((c) => c.at > (s.refreshedAt || "")).length + (s.treeChangedAt > (s.refreshedAt || "") ? 1 : 0)
   };
 }
@@ -5285,6 +5294,7 @@ function processLibrary(id, { model, only } = {}) {
     s.job.running = false;
     s.job.stage = "Done";
     save(id, true);
+    bus.emit("jobdone", id);
   });
   return s.job;
 }
@@ -5519,6 +5529,7 @@ async function rebuildThreads(id, model, scopes) {
       const res = await callModel({ model, system: SYSTEM, kind: "threads", schema: SCHEMAS.threads, prompt: threadsPrompt({ library: lib2, path: pathName(index, scope), items, existing }) });
       s.cost += res.cost;
       const answered = new Map(existing.filter((t) => t.answeredBy).map((t) => [t.id, t]));
+      const edited = new Map(existing.filter((t) => t.editedAt).map((t) => [t.id, t]));
       for (const t of existing) delete s.threads[t.id];
       for (const t of res.out.threads) {
         const its = t.items.filter((x) => s.items[x]);
@@ -5538,6 +5549,8 @@ async function rebuildThreads(id, model, scopes) {
           ...prev && t.status !== "decided" ? { status: "decided", decision: prev.decision, answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {},
           ...prev && t.status === "decided" ? { answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {}
         };
+        const ed = edited.get(t.id);
+        if (ed) Object.assign(s.threads[t.id], { title: ed.title, summary: ed.summary, decision: ed.decision, status: ed.status, editedBy: ed.editedBy, editedAt: ed.editedAt });
       }
       s.scopeSig[scope] = sig(items);
       s.job.done++;
@@ -5551,11 +5564,11 @@ async function rebuildThreads(id, model, scopes) {
 }
 const sig = (items) => items.map((i) => i.id).sort().join(",");
 function changedScopes(s, index) {
-  const now = {};
-  for (const i of Object.values(s.items)) if (threadable(i)) (now[scopeOf(index, home(i))] ||= []).push(i);
-  const out = new Set(Object.keys(now).filter((k) => s.scopeSig[k] !== sig(now[k])));
-  for (const k of Object.keys(s.scopeSig)) if (!now[k]) out.add(k);
-  for (const t of Object.values(s.threads)) if (!now[t.scope]) out.add(t.scope);
+  const now2 = {};
+  for (const i of Object.values(s.items)) if (threadable(i)) (now2[scopeOf(index, home(i))] ||= []).push(i);
+  const out = new Set(Object.keys(now2).filter((k) => s.scopeSig[k] !== sig(now2[k])));
+  for (const k of Object.keys(s.scopeSig)) if (!now2[k]) out.add(k);
+  for (const t of Object.values(s.threads)) if (!now2[t.scope]) out.add(t.scope);
   return out;
 }
 async function weighQuestions(id) {
@@ -5577,7 +5590,7 @@ async function weighQuestions(id) {
 }
 function answer(id, { qid, text, branch, newBranch, skip, items }) {
   const s = load(id), index = flat(s.tree.branches);
-  const at = (/* @__PURE__ */ new Date()).toISOString();
+  const at = now();
   if (skip) {
     if (items?.length) for (const x of items) s.snoozed[(qid === "spot" ? "s:" : "i:") + x] = at;
     else s.snoozed[qid] = at;
@@ -5591,8 +5604,8 @@ function answer(id, { qid, text, branch, newBranch, skip, items }) {
     const t = s.threads[key];
     if (!t) throw new Error("No such thread");
     if (!text?.trim()) throw new Error("Write an answer, or skip");
-    Object.assign(t, { status: "decided", decision: text.trim(), answeredBy: "owner", answeredAt: at });
-    s.answers.push({ at, thread: key, title: t.title, q: t.question?.q, a: text.trim(), where: pathName(index, t.branch) });
+    Object.assign(t, { status: "decided", decision: text.trim(), answeredBy: actor || "owner", answeredAt: at });
+    s.answers.push({ at, by: actor, thread: key, title: t.title, q: t.question?.q, a: text.trim(), where: pathName(index, t.branch) });
   } else {
     const i = s.items[key];
     if (!i) throw new Error("No such item");
@@ -5609,13 +5622,13 @@ function answer(id, { qid, text, branch, newBranch, skip, items }) {
     if (!target || target !== "none" && !flat(s.tree.branches).has(target)) throw new Error("Pick a branch");
     Object.assign(i, { branch: target, conf: 1, by: "owner", rule: "owner", filed: target !== "none", offtopic: target === "none", links: (i.links || []).filter((l) => l !== target) });
     s.corrections.push({ at, text: i.text, branch: target });
-    s.answers.push({ at, item: key, q: i.text, a: pathName(flat(s.tree.branches), target) });
+    s.answers.push({ at, by: actor, item: key, q: i.text, a: pathName(flat(s.tree.branches), target) });
   }
   save(id);
   return { ok: true };
 }
 function spotAnswer(id, checks) {
-  const s = load(id), index = flat(s.tree.branches), at = (/* @__PURE__ */ new Date()).toISOString();
+  const s = load(id), index = flat(s.tree.branches), at = now();
   let right = 0, moved = 0;
   for (const ck of checks) {
     const i = s.items[ck.id];
@@ -5626,13 +5639,13 @@ function spotAnswer(id, checks) {
     s.corrections.push({ at, text: i.text, branch: to });
     ck.ok ? right++ : moved++;
   }
-  s.answers.push({ at, q: `Spot check of ${right + moved} filing(s)`, a: `${right} right, ${moved} moved` });
+  s.answers.push({ at, by: actor, q: `Spot check of ${right + moved} filing(s)`, a: `${right} right, ${moved} moved` });
   applyTrust(s);
   save(id);
   return { right, moved, ...counts(s) };
 }
 function sharpen(id, key, { merge, describe }) {
-  const s = load(id), index = flat(s.tree.branches), at = (/* @__PURE__ */ new Date()).toISOString();
+  const s = load(id), index = flat(s.tree.branches), at = now();
   const [a, b] = key.split("|");
   if (merge) {
     const keep = merge, gone = merge === a ? b : a;
@@ -5667,6 +5680,113 @@ function sharpen(id, key, { merge, describe }) {
   save(id);
   return { ok: true };
 }
+let clock = null, actor = null;
+const now = () => clock || (/* @__PURE__ */ new Date()).toISOString();
+const me = (id) => LIBS.get(id)?.sync?.me || "owner";
+const CLAIM_MIN = 30;
+function change(id, op) {
+  const s = load(id);
+  if (op.kind === "answer" && op.body?.skip) return answer(id, op.body);
+  op = { ...op, id: `${me(id)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, at: (/* @__PURE__ */ new Date()).toISOString(), by: me(id) };
+  const r = applyChange(id, op);
+  (s.outbox ||= []).push(op);
+  save(id);
+  bus.emit("change", id);
+  return r;
+}
+function applyChange(id, op) {
+  const s = load(id);
+  s.log ||= [];
+  if (op.kind === "claim") {
+    if (!s.claims?.[op.qid] || s.claims[op.qid].at < op.at) (s.claims ||= {})[op.qid] = { by: op.by, at: op.at };
+    return { ok: true };
+  }
+  if (s.log.some((x) => x.id === op.id)) return { ok: true };
+  [clock, actor] = [op.at, op.by];
+  const entry = { id: op.id, at: op.at, by: op.by, kind: op.kind };
+  let r;
+  try {
+    r = APPLY[op.kind](s, op, entry, id);
+  } catch (e) {
+    entry.error = e.message;
+    r = { error: e.message };
+  } finally {
+    clock = actor = null;
+  }
+  s.log.push(entry);
+  return r;
+}
+const APPLY = {
+  answer(s, op, e, id) {
+    const b = op.body, index = flat(s.tree.branches), [kind, key] = [b.qid.slice(0, 1), b.qid.slice(2)];
+    if (b.qid === "spot") {
+      const r = answer(id, b);
+      e.what = `Spot check: ${r.right} right, ${r.moved} moved`;
+      return r;
+    }
+    if (kind === "t") {
+      const t = s.threads[key];
+      Object.assign(e, { what: `Decided: ${t?.title || key}`, before: t?.decision || STATUS_WORD[t?.status] || "", after: b.text });
+    } else if (kind === "b") Object.assign(e, { what: b.merge ? `Merged ${key.split("|").filter((x) => x !== b.merge).map((x) => pathName(index, x))} into ${pathName(index, b.merge)}` : `Described ${key.split("|").map((x) => pathName(index, x)).join(" and ")}`, after: b.merge ? "" : Object.values(b.describe || {}).join(" / ") });
+    else {
+      const i = s.items[key];
+      Object.assign(e, { what: `Filed: ${i?.text || key}`, before: i ? pathName(index, i.branch) : "", after: b.newBranch?.name || pathName(index, b.branch) });
+    }
+    return answer(id, b);
+  },
+  editThread(s, op, e, id) {
+    const t = s.threads[op.thread];
+    if (!t) throw new Error("That topic is gone");
+    const f = Object.fromEntries(["title", "summary", "decision", "status"].filter((k) => op[k] !== void 0 && op[k] !== t[k]).map((k) => [k, op[k]]));
+    Object.assign(e, { what: `Edited topic: ${t.title}`, before: Object.keys(f).map((k) => `${k}: ${t[k] || ""}`).join("\n"), after: Object.entries(f).map(([k, v]) => `${k}: ${v}`).join("\n") });
+    Object.assign(t, f, { editedBy: op.by, editedAt: op.at });
+    save(id);
+    return { ok: true };
+  },
+  editBranch(s, op, e, id) {
+    const n = findNode(s.tree.branches, op.branch);
+    if (!n) throw new Error("That branch is gone");
+    const f = Object.fromEntries(["name", "desc"].filter((k) => op[k] !== void 0 && op[k] !== n[k]).map((k) => [k, op[k]]));
+    Object.assign(e, { what: `Edited branch: ${n.name}`, before: Object.keys(f).map((k) => `${k}: ${n[k] || ""}`).join("\n"), after: Object.entries(f).map(([k, v]) => `${k}: ${v}`).join("\n") });
+    Object.assign(n, f);
+    s.treeChangedAt = op.at;
+    save(id);
+    return { ok: true };
+  },
+  addBranch(s, op, e, id) {
+    const parent = op.parent ? findNode(s.tree.branches, op.parent) : null;
+    if (op.parent && !parent) throw new Error("That branch is gone");
+    const slug = op.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
+    const bid = parent ? `${parent.id}.${slug}` : slug;
+    if (!flat(s.tree.branches).has(bid)) (parent ? parent.children ||= [] : s.tree.branches).push({ id: bid, name: op.name.trim(), desc: op.desc || "", from: op.by, added: op.at.slice(0, 10) });
+    Object.assign(e, { what: `Added branch: ${pathName(flat(s.tree.branches), bid)}`, after: op.desc || "" });
+    s.treeChangedAt = op.at;
+    save(id);
+    return { ok: true, id: bid };
+  },
+  transcript(s, op, e) {
+    e.what = `Added call: ${op.file}`;
+    return { ok: true };
+  }
+};
+const STATUS_WORD = { unsettled: "Never settled", open: "Open", assumed: "Assumed", decided: "Decided", done: "Done" };
+function applyRemote(id, ops) {
+  const s = load(id), seen = new Set((s.log || []).map((x) => x.id));
+  const todo = ops.filter((o) => o.kind === "claim" || !seen.has(o.id)).sort((a, b) => a.at.localeCompare(b.at));
+  for (const op of todo) applyChange(id, op);
+  if (todo.some((o) => o.kind !== "claim")) applyTrust(s);
+  if (todo.length) save(id);
+  return todo.filter((o) => o.kind !== "claim").length;
+}
+function replaceBase(id, record, tree) {
+  const old = load(id);
+  const keep = { snoozed: old.snoozed, outbox: old.outbox || [], outfiles: old.outfiles || [], claims: old.claims || {}, syncState: old.syncState };
+  states.delete(id);
+  const s = load(id);
+  Object.assign(s, { calls: {}, items: {}, threads: {}, answers: [], corrections: [], crosslinks: [], resolvedPairs: {}, log: [] }, record, keep, { tree, job: null });
+  s.version = old.version + 1;
+  save(id, true);
+}
 const findNode = (nodes2, id) => {
   for (const n of nodes2) {
     if (n.id === id) return n;
@@ -5700,6 +5820,7 @@ async function refile(id) {
     s.job.running = false;
     s.job.stage = "Done";
     save(id, true);
+    bus.emit("jobdone", id);
   }
   return counts(s);
 }
@@ -5720,6 +5841,7 @@ async function refresh(id, { model } = {}) {
     s.job.running = false;
     s.job.stage = "Done";
     save(id, true);
+    bus.emit("jobdone", id);
   });
   return s.job;
 }
@@ -5742,6 +5864,7 @@ function crosscheck(id, { model } = {}) {
     s.job.running = false;
     s.job.stage = "Done";
     save(id, true);
+    bus.emit("jobdone", id);
   });
   return s.job;
 }
@@ -5776,6 +5899,153 @@ async function ask(id, question2, { model } = {}) {
   save(id);
   return res.out;
 }
+const API = "https://api.github.com";
+const EVERY = { member: 6e4, reader: 12e4 };
+const RECORD = ["library.json", "tree.json", "INDEX.md"];
+const blobSha = (buf) => createHash("sha1").update(`blob ${buf.length}\0`).update(buf).digest("hex");
+const token = (lib2) => process.env.THINK_GITHUB_TOKEN || lib2.sync.token || spawnSync("gh", ["auth", "token"], { encoding: "utf8" }).stdout?.trim();
+async function gh(lib2, path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { authorization: `Bearer ${token(lib2)}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", ...opts.body ? { "content-type": "application/json" } : {} },
+    body: opts.body ? JSON.stringify(opts.body) : void 0,
+    signal: AbortSignal.timeout(12e4)
+  });
+  if (res.status === 404 && opts.soft) return null;
+  if (!res.ok) throw Object.assign(new Error(`GitHub ${res.status}: ${(await res.text()).slice(0, 160)}`), { status: res.status });
+  return res.status === 204 ? null : res.json();
+}
+const blob = async (lib2, sha) => Buffer.from((await gh(lib2, `/repos/${lib2.sync.repo}/git/blobs/${sha}`)).content, "base64");
+async function remote(lib2) {
+  const ref = await gh(lib2, `/repos/${lib2.sync.repo}/git/ref/heads/main`, { soft: true }).catch((e) => {
+    if (e.status === 409) return null;
+    throw e;
+  });
+  if (!ref) return { head: null, files: {} };
+  const commit = await gh(lib2, `/repos/${lib2.sync.repo}/git/commits/${ref.object.sha}`);
+  const tree = await gh(lib2, `/repos/${lib2.sync.repo}/git/trees/${commit.tree.sha}?recursive=1`);
+  return { head: ref.object.sha, tree: commit.tree.sha, files: Object.fromEntries(tree.tree.filter((t) => t.type === "blob").map((t) => [t.path, t.sha])) };
+}
+const running = /* @__PURE__ */ new Set();
+async function sync(id, { push = true } = {}) {
+  const lib2 = getLibrary(id), s = load(id);
+  if (!lib2?.sync || running.has(id) || lib2.sync.role === "reader" && s.job?.running) return;
+  running.add(id);
+  const before = JSON.stringify([s.syncState?.error, s.outbox?.length, s.outfiles?.length]);
+  let dirty = false;
+  try {
+    const r = await remote(lib2);
+    const changesDir = join(lib2.dir, "changes");
+    mkdirSync(changesDir, { recursive: true });
+    const seen = { ...s.syncState?.seen };
+    for (const [path, sha] of Object.entries(r.files)) {
+      if (!path.startsWith("data/changes/") || seen[path] === sha) continue;
+      writeFileSync(join(changesDir, path.slice("data/changes/".length)), await blob(lib2, sha));
+      seen[path] = sha;
+    }
+    if (lib2.sync.role === "member") {
+      const p = "data/record/library.json", t = "data/record/tree.json";
+      if (r.files[p] && (seen[p] !== r.files[p] || seen[t] !== r.files[t])) {
+        replaceBase(id, JSON.parse(await blob(lib2, r.files[p])), JSON.parse(await blob(lib2, r.files[t])));
+        seen[p] = r.files[p];
+        seen[t] = r.files[t];
+        dirty = true;
+      }
+    }
+    const ops = readdirSync(changesDir).filter((f) => f.endsWith(".jsonl")).flatMap((f) => readFileSync(join(changesDir, f), "utf8").split("\n").filter(Boolean).map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean));
+    const applied = applyRemote(id, [...ops, ...load(id).outbox || []]);
+    if (applied) dirty = true;
+    if (lib2.sync.role === "reader") {
+      const dir = lib2.sources.find((x) => existsSync(x) && !extname(x));
+      for (const [path, sha] of Object.entries(r.files)) {
+        const name = path.slice("data/Transcripts/".length);
+        if (!path.startsWith("data/Transcripts/") || name.includes("/") || existsSync(join(dir, name))) continue;
+        writeFileSync(join(dir, name), await blob(lib2, sha));
+        dirty = true;
+      }
+    }
+    const state = load(id);
+    state.syncState = { ...state.syncState, seen };
+    if (push) await send(id, lib2, r);
+    state.syncState = { ...state.syncState, last: (/* @__PURE__ */ new Date()).toISOString(), error: "" };
+  } catch (e) {
+    load(id).syncState = { ...load(id).syncState, error: e.message.slice(0, 200) };
+  } finally {
+    running.delete(id);
+    const x = load(id);
+    if (dirty || before !== JSON.stringify([x.syncState?.error, x.outbox?.length, x.outfiles?.length])) save(id);
+  }
+}
+async function send(id, lib2, r) {
+  const s = load(id), me2 = lib2.sync.me;
+  const files = {};
+  const mine = join(lib2.dir, "changes", `${me2}.jsonl`);
+  const sent = s.outbox?.length || 0, calls = s.outfiles?.length || 0;
+  const log2 = Buffer.from((existsSync(mine) ? readFileSync(mine, "utf8") : "") + (s.outbox || []).map((o) => JSON.stringify(o) + "\n").join(""));
+  if (log2.length) files[`data/changes/${me2}.jsonl`] = log2;
+  for (const f of s.outfiles || []) if (existsSync(f.path)) files[`data/Transcripts/${f.name}`] = readFileSync(f.path);
+  if (lib2.sync.role === "reader") {
+    for (const f of RECORD) files[`data/record/${f}`] = readFileSync(join(lib2.dir, f));
+    const dir = lib2.sources.find((x) => existsSync(x) && !extname(x));
+    for (const f of readdirSync(dir)) if (KINDS.includes(extname(f).toLowerCase()) && !f.startsWith(".")) files[`data/Transcripts/${f}`] = readFileSync(join(dir, f));
+  }
+  const changed2 = Object.entries(files).filter(([path, buf]) => r.files[path] !== blobSha(buf));
+  if (changed2.length) {
+    const tree = [];
+    for (const [path, buf] of changed2) {
+      const b = await gh(lib2, `/repos/${lib2.sync.repo}/git/blobs`, { method: "POST", body: { content: buf.toString("base64"), encoding: "base64" } });
+      tree.push({ path, mode: "100644", type: "blob", sha: b.sha });
+    }
+    const t = await gh(lib2, `/repos/${lib2.sync.repo}/git/trees`, { method: "POST", body: { ...r.tree ? { base_tree: r.tree } : {}, tree } });
+    const what = [sent && `${sent} change(s)`, calls && `${calls} call(s)`, lib2.sync.role === "reader" && changed2.some(([p]) => p.startsWith("data/record/")) && "record"].filter(Boolean).join(", ");
+    const c = await gh(lib2, `/repos/${lib2.sync.repo}/git/commits`, { method: "POST", body: { message: `${me2}: ${what || "sync"}`, tree: t.sha, parents: r.head ? [r.head] : [] } });
+    if (r.head) await gh(lib2, `/repos/${lib2.sync.repo}/git/refs/heads/main`, { method: "PATCH", body: { sha: c.sha } });
+    else await gh(lib2, `/repos/${lib2.sync.repo}/git/refs`, { method: "POST", body: { ref: "refs/heads/main", sha: c.sha } });
+    const seen = { ...s.syncState?.seen };
+    for (const [path, b] of changed2) seen[path] = blobSha(b);
+    if (lib2.sync.role === "member") {
+      for (const p of Object.keys(seen)) if (p.startsWith("data/record/")) seen[p] = r.files[p];
+    }
+    s.syncState = { ...s.syncState, seen };
+  }
+  if (log2.length) writeFileSync(mine, log2);
+  s.outbox = (s.outbox || []).slice(sent);
+  s.outfiles = (s.outfiles || []).slice(calls);
+}
+function addTranscript(id, name, base64) {
+  const lib2 = getLibrary(id), s = load(id);
+  if (!KINDS.includes(extname(name).toLowerCase())) throw new Error(`Only ${KINDS.join(", ")} files`);
+  const dir = join(lib2.dir, "outfiles");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, name.replace(/[\\/:*?"<>|]/g, "-"));
+  writeFileSync(path, Buffer.from(base64, "base64"));
+  (s.outfiles ||= []).push({ name: path.split(/[\\/]/).at(-1), path });
+  save(id);
+}
+function startSync(ids) {
+  for (const id of ids) {
+    const lib2 = getLibrary(id);
+    if (!lib2?.sync) continue;
+    let soon = null;
+    sync(id);
+    setInterval(() => sync(id), EVERY[lib2.sync.role] || 6e4);
+    bus.on("change", (x) => {
+      if (x === id) {
+        clearTimeout(soon);
+        soon = setTimeout(() => sync(id), 3e3);
+      }
+    });
+    bus.on("jobdone", (x) => {
+      if (x === id) sync(id);
+    });
+  }
+}
 const PORT = Number(process.env.THINK_PORT || 4477);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = join(ROOT, "dist");
@@ -5800,7 +6070,7 @@ const ACTIONS = { answer: answer$1, rerun, correct, stuck, deeper, pick: pick$1,
 function librarySse(req, res, id) {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
   let timer = null;
-  const send = () => {
+  const send2 = () => {
     timer = null;
     const s = load(id);
     res.write(`data: ${JSON.stringify({ version: s.version, job: s.job })}
@@ -5808,9 +6078,9 @@ function librarySse(req, res, id) {
 `);
   };
   const on = (lid) => {
-    if (lid === id && !timer) timer = setTimeout(send, 400);
+    if (lid === id && !timer) timer = setTimeout(send2, 400);
   };
-  send();
+  send2();
   bus.on("library", on);
   const ping = setInterval(() => res.write(": ping\n\n"), 2e4);
   req.on("close", () => {
@@ -5826,22 +6096,29 @@ const LIBRARY_ACTIONS = {
   crosscheck: (id, b) => crosscheck(id, b),
   stop: (id) => stop(id),
   refile: (id) => refile(id),
-  answer: (id, b) => answer(id, b),
+  // Edits go through the change log, so the team sees who changed what and every copy can replay it.
+  answer: (id, b) => change(id, { kind: "answer", body: b }),
+  change: (id, b) => change(id, b),
+  upload: (id, b) => {
+    for (const f of b.files || []) addTranscript(id, f.name, f.data);
+    return change(id, { kind: "transcript", file: (b.files || []).map((f) => f.name).join(", ") });
+  },
+  sync: (id) => sync(id),
   ask: (id, b) => ask(id, b.question, b)
 };
 function sse(req, res, run2) {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
   let timer = null;
-  const send = () => {
+  const send2 = () => {
     timer = null;
     res.write(`data: ${JSON.stringify(run2)}
 
 `);
   };
   const onRun = (r) => {
-    if (r.id === run2.id && !timer) timer = setTimeout(send, 120);
+    if (r.id === run2.id && !timer) timer = setTimeout(send2, 120);
   };
-  send();
+  send2();
   bus$1.on("run", onRun);
   const ping = setInterval(() => res.write(": ping\n\n"), 2e4);
   req.on("close", () => {
@@ -5913,4 +6190,7 @@ createServer(async (req, res) => {
   } catch (e) {
     json(res, 400, { error: String(e.message || e) });
   }
-}).listen(PORT, "127.0.0.1", () => console.log(`Thinking System on http://localhost:${PORT}  (runs in ${RUNS_DIR})`));
+}).listen(PORT, "127.0.0.1", () => {
+  console.log(`Thinking System on http://localhost:${PORT}  (runs in ${RUNS_DIR})`);
+  startSync(listLibraries().map((l) => l.id));
+});

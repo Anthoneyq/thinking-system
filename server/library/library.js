@@ -44,7 +44,7 @@ export function load(id) {
 }
 
 let timers = {}
-function save(id, now = false) {
+export function save(id, now = false) {
   const s = states.get(id), lib = LIBS.get(id)
   s.version++
   bus.emit('library', id)
@@ -232,6 +232,9 @@ export function view(id) {
   const bump = (bid, key) => { for (const p of pathOf(index, bid)) { const b = (byBranch[p.id] ||= { items: 0, filed: 0, need: 0, now: 0 }); b[key]++ } }
   for (const i of Object.values(s.items)) if (i.placed && !i.dup && i.branch !== 'none') { bump(i.branch, 'items'); if (i.filed) bump(i.branch, 'filed') }
   const qs = questions(id)
+  // Someone else has this question open: it shows who, so two people don't answer it.
+  const fresh = Date.now() - CLAIM_MIN * 60000
+  for (const q of qs) { const c = s.claims?.[q.id]; if (c && c.by !== me(id) && Date.parse(c.at) > fresh) q.claimedBy = c.by }
   for (const q of qs) for (const bid of q.kind === 'thread' ? [s.threads[q.thread].branch] : q.kind === 'tree' ? [q.a.id, q.b.id] : q.kind === 'place' ? [q.guess] : []) {
     bump(bid, 'need'); if (q.now) bump(bid, 'now')
   }
@@ -240,6 +243,8 @@ export function view(id) {
     tree: s.tree, byBranch, counts: counts(s), calls: Object.values(s.calls).sort((a, b) => b.date.localeCompare(a.date)),
     items: s.items, threads: s.threads, crosslinks: s.crosslinks, answers: s.answers.slice(-50), questions: qs,
     job: s.job, version: s.version, estimate: estimate(s, id),
+    me: me(id), member: lib.sync?.role === 'member', sync: lib.sync ? { repo: lib.sync.repo, role: lib.sync.role, ...s.syncState, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
+    log: (s.log || []).slice(-300).reverse(),
     pending: s.corrections.filter(c => c.at > (s.refreshedAt || '')).length + (s.treeChangedAt > (s.refreshedAt || '') ? 1 : 0),
   }
 }
@@ -293,7 +298,7 @@ export function processLibrary(id, { model, only } = {}) {
   model = model ? resolveModel(model) : readModel(id)
   s.job = { running: true, stage: 'Reading calls', done: 0, total: 0, started: new Date().toISOString(), log: [], model }
   save(id)
-  pipeline(id, model, only).catch(e => note(id, `Stopped: ${e.message}`)).finally(() => { s.job.running = false; s.job.stage = 'Done'; save(id, true) })
+  pipeline(id, model, only).catch(e => note(id, `Stopped: ${e.message}`)).finally(() => { s.job.running = false; s.job.stage = 'Done'; save(id, true); bus.emit('jobdone', id) })
   return s.job
 }
 
@@ -488,6 +493,7 @@ async function rebuildThreads(id, model, scopes) {
       const res = await callModel({ model, system: SYSTEM, kind: 'threads', schema: SCHEMAS.threads, prompt: threadsPrompt({ library: lib, path: pathName(index, scope), items, existing }) })
       s.cost += res.cost
       const answered = new Map(existing.filter(t => t.answeredBy).map(t => [t.id, t]))
+      const edited = new Map(existing.filter(t => t.editedAt).map(t => [t.id, t]))
       for (const t of existing) delete s.threads[t.id]
       for (const t of res.out.threads) {
         const its = t.items.filter(x => s.items[x])
@@ -503,6 +509,9 @@ async function rebuildThreads(id, model, scopes) {
           ...(prev && t.status !== 'decided' ? { status: 'decided', decision: prev.decision, answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {}),
           ...(prev && t.status === 'decided' ? { answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {}),
         }
+        // What a person wrote into a topic stays; the rewrite only adds what was said since.
+        const ed = edited.get(t.id)
+        if (ed) Object.assign(s.threads[t.id], { title: ed.title, summary: ed.summary, decision: ed.decision, status: ed.status, editedBy: ed.editedBy, editedAt: ed.editedAt })
       }
       s.scopeSig[scope] = sig(items)
       s.job.done++
@@ -546,7 +555,7 @@ async function weighQuestions(id) {
 // ---------- answers: settle a thread, or confirm where an item belongs (and teach the filing) ----------
 export function answer(id, { qid, text, branch, newBranch, skip, items }) {
   const s = load(id), index = flat(s.tree.branches)
-  const at = new Date().toISOString()
+  const at = now()
   if (skip) {
     if (items?.length) for (const x of items) s.snoozed[(qid === 'spot' ? 's:' : 'i:') + x] = at
     else s.snoozed[qid] = at
@@ -559,8 +568,8 @@ export function answer(id, { qid, text, branch, newBranch, skip, items }) {
     const t = s.threads[key]
     if (!t) throw new Error('No such thread')
     if (!text?.trim()) throw new Error('Write an answer, or skip')
-    Object.assign(t, { status: 'decided', decision: text.trim(), answeredBy: 'owner', answeredAt: at })
-    s.answers.push({ at, thread: key, title: t.title, q: t.question?.q, a: text.trim(), where: pathName(index, t.branch) })
+    Object.assign(t, { status: 'decided', decision: text.trim(), answeredBy: actor || 'owner', answeredAt: at })
+    s.answers.push({ at, by: actor, thread: key, title: t.title, q: t.question?.q, a: text.trim(), where: pathName(index, t.branch) })
   } else {
     const i = s.items[key]
     if (!i) throw new Error('No such item')
@@ -577,7 +586,7 @@ export function answer(id, { qid, text, branch, newBranch, skip, items }) {
     if (!target || (target !== 'none' && !flat(s.tree.branches).has(target))) throw new Error('Pick a branch')
     Object.assign(i, { branch: target, conf: 1, by: 'owner', rule: 'owner', filed: target !== 'none', offtopic: target === 'none', links: (i.links || []).filter(l => l !== target) })
     s.corrections.push({ at, text: i.text, branch: target })
-    s.answers.push({ at, item: key, q: i.text, a: pathName(flat(s.tree.branches), target) })
+    s.answers.push({ at, by: actor, item: key, q: i.text, a: pathName(flat(s.tree.branches), target) })
   }
   save(id)
   return { ok: true }
@@ -585,7 +594,7 @@ export function answer(id, { qid, text, branch, newBranch, skip, items }) {
 // A spot check: each item is right where it is, or moves where you say. Either way it is now yours, it teaches
 // the filing, and it counts toward how often the rule that placed it is right.
 function spotAnswer(id, checks) {
-  const s = load(id), index = flat(s.tree.branches), at = new Date().toISOString()
+  const s = load(id), index = flat(s.tree.branches), at = now()
   let right = 0, moved = 0
   for (const ck of checks) {
     const i = s.items[ck.id]
@@ -596,7 +605,7 @@ function spotAnswer(id, checks) {
     s.corrections.push({ at, text: i.text, branch: to })
     ck.ok ? right++ : moved++
   }
-  s.answers.push({ at, q: `Spot check of ${right + moved} filing(s)`, a: `${right} right, ${moved} moved` })
+  s.answers.push({ at, by: actor, q: `Spot check of ${right + moved} filing(s)`, a: `${right} right, ${moved} moved` })
   applyTrust(s)
   save(id)
   return { right, moved, ...counts(s) }
@@ -604,7 +613,7 @@ function spotAnswer(id, checks) {
 
 // Merge two branches into one, or write how they differ into both descriptions. Then "Update" files everything again.
 function sharpen(id, key, { merge, describe }) {
-  const s = load(id), index = flat(s.tree.branches), at = new Date().toISOString()
+  const s = load(id), index = flat(s.tree.branches), at = now()
   const [a, b] = key.split('|')
   if (merge) {
     const keep = merge, gone = merge === a ? b : a
@@ -638,6 +647,101 @@ function sharpen(id, key, { merge, describe }) {
   return { ok: true }
 }
 
+// ---------- changes: every edit is a change with who, when and what it was before, so a team can share one record ----------
+// Each person's changes go to their own log (data/changes/<who>.jsonl in the shared repo), so two people never write
+// the same file. Applying a change is deterministic, so any copy can replay everyone's changes on the last shared record.
+let clock = null, actor = null
+const now = () => clock || new Date().toISOString()
+export const me = id => LIBS.get(id)?.sync?.me || 'owner'
+const CLAIM_MIN = 30
+
+export function change(id, op) {
+  const s = load(id)
+  // Skipping is personal: it hides a question for you, not for the team.
+  if (op.kind === 'answer' && op.body?.skip) return answer(id, op.body)
+  op = { ...op, id: `${me(id)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, at: new Date().toISOString(), by: me(id) }
+  const r = applyChange(id, op)
+  ;(s.outbox ||= []).push(op)
+  save(id)
+  bus.emit('change', id)
+  return r
+}
+
+export function applyChange(id, op) {
+  const s = load(id)
+  s.log ||= []
+  if (op.kind === 'claim') { if (!s.claims?.[op.qid] || s.claims[op.qid].at < op.at) (s.claims ||= {})[op.qid] = { by: op.by, at: op.at }; return { ok: true } }
+  if (s.log.some(x => x.id === op.id)) return { ok: true }
+  ;[clock, actor] = [op.at, op.by]
+  const entry = { id: op.id, at: op.at, by: op.by, kind: op.kind }
+  let r
+  try { r = APPLY[op.kind](s, op, entry, id) } catch (e) { entry.error = e.message; r = { error: e.message } } finally { clock = actor = null }
+  s.log.push(entry)
+  return r
+}
+
+// Each change says what it did, and what was there before, for the Changes list.
+const APPLY = {
+  answer(s, op, e, id) {
+    const b = op.body, index = flat(s.tree.branches), [kind, key] = [b.qid.slice(0, 1), b.qid.slice(2)]
+    if (b.qid === 'spot') { const r = answer(id, b); e.what = `Spot check: ${r.right} right, ${r.moved} moved`; return r }
+    if (kind === 't') { const t = s.threads[key]; Object.assign(e, { what: `Decided: ${t?.title || key}`, before: t?.decision || STATUS_WORD[t?.status] || '', after: b.text }) }
+    else if (kind === 'b') Object.assign(e, { what: b.merge ? `Merged ${key.split('|').filter(x => x !== b.merge).map(x => pathName(index, x))} into ${pathName(index, b.merge)}` : `Described ${key.split('|').map(x => pathName(index, x)).join(' and ')}`, after: b.merge ? '' : Object.values(b.describe || {}).join(' / ') })
+    else { const i = s.items[key]; Object.assign(e, { what: `Filed: ${i?.text || key}`, before: i ? pathName(index, i.branch) : '', after: b.newBranch?.name || pathName(index, b.branch) }) }
+    return answer(id, b)
+  },
+  editThread(s, op, e, id) {
+    const t = s.threads[op.thread]
+    if (!t) throw new Error('That topic is gone')
+    const f = Object.fromEntries(['title', 'summary', 'decision', 'status'].filter(k => op[k] !== undefined && op[k] !== t[k]).map(k => [k, op[k]]))
+    Object.assign(e, { what: `Edited topic: ${t.title}`, before: Object.keys(f).map(k => `${k}: ${t[k] || ''}`).join('\n'), after: Object.entries(f).map(([k, v]) => `${k}: ${v}`).join('\n') })
+    Object.assign(t, f, { editedBy: op.by, editedAt: op.at })
+    save(id); return { ok: true }
+  },
+  editBranch(s, op, e, id) {
+    const n = findNode(s.tree.branches, op.branch)
+    if (!n) throw new Error('That branch is gone')
+    const f = Object.fromEntries(['name', 'desc'].filter(k => op[k] !== undefined && op[k] !== n[k]).map(k => [k, op[k]]))
+    Object.assign(e, { what: `Edited branch: ${n.name}`, before: Object.keys(f).map(k => `${k}: ${n[k] || ''}`).join('\n'), after: Object.entries(f).map(([k, v]) => `${k}: ${v}`).join('\n') })
+    Object.assign(n, f)
+    s.treeChangedAt = op.at
+    save(id); return { ok: true }
+  },
+  addBranch(s, op, e, id) {
+    const parent = op.parent ? findNode(s.tree.branches, op.parent) : null
+    if (op.parent && !parent) throw new Error('That branch is gone')
+    const slug = op.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24)
+    const bid = parent ? `${parent.id}.${slug}` : slug
+    if (!flat(s.tree.branches).has(bid)) (parent ? (parent.children ||= []) : s.tree.branches).push({ id: bid, name: op.name.trim(), desc: op.desc || '', from: op.by, added: op.at.slice(0, 10) })
+    Object.assign(e, { what: `Added branch: ${pathName(flat(s.tree.branches), bid)}`, after: op.desc || '' })
+    s.treeChangedAt = op.at
+    save(id); return { ok: true, id: bid }
+  },
+  transcript(s, op, e) { e.what = `Added call: ${op.file}`; return { ok: true } },
+}
+const STATUS_WORD = { unsettled: 'Never settled', open: 'Open', assumed: 'Assumed', decided: 'Decided', done: 'Done' }
+
+// Everyone's changes on top of the last shared record, oldest first; ones already in it are skipped.
+export function applyRemote(id, ops) {
+  const s = load(id), seen = new Set((s.log || []).map(x => x.id))
+  const todo = ops.filter(o => o.kind === 'claim' || !seen.has(o.id)).sort((a, b) => a.at.localeCompare(b.at))
+  for (const op of todo) applyChange(id, op)
+  if (todo.some(o => o.kind !== 'claim')) applyTrust(s)
+  if (todo.length) save(id)
+  return todo.filter(o => o.kind !== 'claim').length
+}
+
+// A newer shared record arrived: it replaces this copy, keeping what is only yours (skips, unsent changes).
+export function replaceBase(id, record, tree) {
+  const old = load(id)
+  const keep = { snoozed: old.snoozed, outbox: old.outbox || [], outfiles: old.outfiles || [], claims: old.claims || {}, syncState: old.syncState }
+  states.delete(id)
+  const s = load(id)
+  Object.assign(s, { calls: {}, items: {}, threads: {}, answers: [], corrections: [], crosslinks: [], resolvedPairs: {}, log: [] }, record, keep, { tree, job: null })
+  s.version = old.version + 1
+  save(id, true)
+}
+
 const findNode = (nodes, id) => { for (const n of nodes) { if (n.id === id) return n; const f = findNode(n.children || [], id); if (f) return f } return null }
 
 // What filing again retries: items still waiting, and items whose branch is gone. Filed items stay put, so scores
@@ -659,7 +763,7 @@ export async function refile(id) {
   const ids = retry(s)
   s.job = { running: true, stage: 'Filing again', done: 0, total: 0, started: new Date().toISOString(), log: [], model: '' }
   try { resettle(s); await placeItems(id, ids); note(id, `Placed ${ids.length} item(s) again: ${counts(s).filed} filed, ${counts(s).guessed} best guesses`) }
-  finally { s.job.running = false; s.job.stage = 'Done'; save(id, true) }
+  finally { s.job.running = false; s.job.stage = 'Done'; save(id, true); bus.emit('jobdone', id) }
   return counts(s)
 }
 
@@ -677,7 +781,7 @@ export async function refresh(id, { model } = {}) {
     await rebuildThreads(id, topicModel(id), changedScopes(s, flat(s.tree.branches)))
     await weighQuestions(id)
     s.refreshedAt = new Date().toISOString()
-  })().catch(e => note(id, `Stopped: ${e.message}`)).finally(() => { s.job.running = false; s.job.stage = 'Done'; save(id, true) })
+  })().catch(e => note(id, `Stopped: ${e.message}`)).finally(() => { s.job.running = false; s.job.stage = 'Done'; save(id, true); bus.emit('jobdone', id) })
   return s.job
 }
 
@@ -697,7 +801,7 @@ export function crosscheck(id, { model } = {}) {
     s.crosscheckSummary = res.out.summary
     s.job.done = 1
     note(id, `${s.crosslinks.length} link(s) across branches`)
-  })().catch(e => note(id, `Cross-check failed: ${e.message}`)).finally(() => { s.job.running = false; s.job.stage = 'Done'; save(id, true) })
+  })().catch(e => note(id, `Cross-check failed: ${e.message}`)).finally(() => { s.job.running = false; s.job.stage = 'Done'; save(id, true); bus.emit('jobdone', id) })
   return s.job
 }
 

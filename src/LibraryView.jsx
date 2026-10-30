@@ -50,15 +50,18 @@ export default function LibraryView({ id }) {
   return (
     <main className="lib">
       <header className="lib-top">
-        <a className="brand" href="/" onClick={e => { e.preventDefault(); go('/') }}><i />Thinking System</a>
+        {!v.member && <a className="brand" href="/" onClick={e => { e.preventDefault(); go('/') }}><i />Thinking System</a>}
         <div className="lib-title">
           <h1>{v.name}</h1>
           <span className="sub">{c.calls} calls · {c.items} items · {c.filed} filed · {c.guessed} best guesses · {c.links} links · {c.threads} topics · ${c.cost.toFixed(2)} spent</span>
         </div>
         <div className="lib-actions">
+          {v.sync && <Sync v={v} busy={busy} act={act} />}
+          {!v.member && <>
           <button className="btn" disabled={running || !!busy} onClick={() => act('scan')}>Check for new calls</button>
           {v.estimate.calls > 0 && <button className="primary" disabled={running || !!busy} onClick={() => act('process')}>Read {v.estimate.calls} new call{v.estimate.calls > 1 ? 's' : ''} (~${v.estimate.usd.toFixed(2)})</button>}
           {v.pending > 0 && <button className="primary" disabled={running || !!busy} title="Places everything not yet filed again with your answers as examples, then rewrites only the topics whose items moved" onClick={() => act('refresh')}>Update with {v.pending} change{v.pending > 1 ? 's' : ''}</button>}
+          </>}
         </div>
       </header>
       {v.job && (running || v.job.log.length > 0) && <Job job={v.job} onStop={() => act('stop')} />}
@@ -71,17 +74,56 @@ export default function LibraryView({ id }) {
         </section>
         <aside className="lib-panel">
           <div className="seg lib-tabs" role="tablist">
-            {[['needs', `Needs you${v.questions.length ? ` (${v.questions.filter(q => q.now).length || v.questions.length})` : ''}`], ['branch', 'Branch'], ['find', 'Find'], ['links', 'Applies elsewhere'], ['calls', 'Calls']].map(([k, label]) =>
+            {[['needs', `Needs you${v.questions.length ? ` (${v.questions.filter(q => q.now).length || v.questions.length})` : ''}`], ['branch', 'Branch'], ['find', 'Find'], ['links', 'Applies elsewhere'], ['calls', 'Calls'], ...(v.sync || v.log?.length ? [['changes', 'Changes']] : [])].map(([k, label]) =>
               <button key={k} role="tab" aria-checked={tab === k} onClick={() => setTab(k)}>{label}</button>)}
           </div>
           {tab === 'needs' && <Needs v={v} index={index} id={id} reload={reload} onPlace={pick} />}
-          {tab === 'branch' && <Branch v={v} index={index} focus={selected || focus} setFocus={pick} />}
+          {tab === 'branch' && <Branch v={v} index={index} focus={selected || focus} setFocus={pick} edit={body => act('change', body)} />}
           {tab === 'find' && <Find v={v} id={id} index={index} />}
           {tab === 'links' && <Links v={v} running={running} onRun={() => act('crosscheck')} />}
           {tab === 'calls' && <Calls v={v} />}
+          {tab === 'changes' && <Changes v={v} />}
         </aside>
       </div>
     </main>
+  )
+}
+
+// Shared through GitHub: what is waiting to send, the last sync, and adding calls for the reader to read.
+function Sync({ v, busy, act }) {
+  const file = useRef(null)
+  const add = async e => {
+    const files = await Promise.all([...e.target.files].map(f => new Promise(res => { const r = new FileReader(); r.onload = () => res({ name: f.name, data: r.result.split(',')[1] }); r.readAsDataURL(f) })))
+    e.target.value = ''
+    if (files.length) act('upload', { files })
+  }
+  const y = v.sync
+  return <>
+    <span className={'lib-sync sub' + (y.error ? ' err' : '')} title={y.error || `Shared through ${y.repo}`}>
+      {y.error ? 'Offline: changes wait here' : y.waiting ? `${y.waiting} waiting to send` : y.last ? `Synced ${y.last.slice(11, 16)}` : 'Not synced yet'} · {v.me}
+    </span>
+    <button className="ghost" disabled={!!busy} onClick={() => act('sync')}>Sync now</button>
+    <button className="btn" disabled={!!busy} onClick={() => file.current.click()} title="Scrubbed transcripts (.vtt, .docx, .md, .txt). They are read on the next update.">Add calls</button>
+    <input ref={file} type="file" multiple accept=".vtt,.docx,.md,.txt" hidden onChange={add} />
+  </>
+}
+
+// Who changed what, newest first, with what was there before.
+function Changes({ v }) {
+  const [who, setWho] = useState('')
+  const people = [...new Set(v.log.map(c => c.by))]
+  const list = v.log.filter(c => !who || c.by === who)
+  return (
+    <div className="lib-changes">
+      {people.length > 1 && <div className="lib-chips">{people.map(p => <button key={p} className={'btn' + (who === p ? ' on' : '')} onClick={() => setWho(who === p ? '' : p)}>{p}</button>)}</div>}
+      {!list.length && <p className="sub">No changes yet. Answers, topic and branch edits, and added calls show here with who made them.</p>}
+      <ol className="lib-log-list">{list.map(c => (
+        <li key={c.id}>
+          <div><b>{c.by}</b> <span className="sub">{c.at.slice(0, 16).replace('T', ' ')}</span>{c.error && <span className="tag red" title={c.error}>not applied</span>}</div>
+          <p>{c.what || c.kind}</p>
+          {(c.before || c.after) && <div className="lib-diff">{c.before && <del>{c.before}</del>}{c.after && <ins>{c.after}</ins>}</div>}
+        </li>))}</ol>
+    </div>
   )
 }
 
@@ -187,6 +229,8 @@ function WebList({ v, index, focus, setFocus, onPick }) {
   )
 }
 
+const claimed = new Map()
+
 // One question at a time: the system says what it still needs, you answer, the next one comes.
 function Needs({ v, index, id, reload, onPlace }) {
   const [k, setK] = useState(0)
@@ -197,6 +241,14 @@ function Needs({ v, index, id, reload, onPlace }) {
   if (!v.questions.length) return <div className="lib-done"><h3>Nothing needs you.</h3><p className="sub">Every topic is settled and every item is filed. New calls bring new questions.</p></div>
   const q = qs[Math.min(k, qs.length - 1)] || {}
   const send = async body => { await api(`library/${id}/answer`, { qid: q.id, ...body }); await reload() }
+  // Opening a question tells the team you're on it, so nobody else answers it at the same time.
+  useEffect(() => {
+    if (!v.sync || !q.id || all) return
+    const last = claimed.get(q.id)
+    if (last && Date.now() - last < 10 * 60000) return
+    claimed.set(q.id, Date.now())
+    api(`library/${id}/change`, { kind: 'claim', qid: q.id }).catch(() => {})
+  }, [q.id, all])
   return (
     <div className="lib-needs">
       <div className="seg lib-now" role="radiogroup">
@@ -204,13 +256,14 @@ function Needs({ v, index, id, reload, onPlace }) {
         <button role="radio" aria-checked={later} onClick={() => { setLater(true); setK(0) }}>Later ({v.questions.length - nowCount})</button>
       </div>
       {!qs.length ? <p className="sub">Nothing here.</p> : <>
+      {!all && q.claimedBy && <p className="lib-claim">{q.claimedBy} has this one open. <button className="ghost" onClick={() => setK(k + 1)}>Next question</button></p>}
       <div className="lib-needs-bar">
         <span className="sub">{qs.length} left{all ? '' : `, showing ${Math.min(k, qs.length - 1) + 1}`}</span>
         <button className="ghost" onClick={() => setAll(!all)}>{all ? 'One at a time' : 'See the list'}</button>
       </div>
       {all
         ? <ol className="lib-qlist">{qs.map((x, j) => <li key={x.id}><button className="ghost" onClick={() => { setK(j); setAll(false) }}>
-            <span className={'tag' + (x.kind !== 'thread' ? ' dashed' : x.status === 'unsettled' ? ' red' : '')}>{x.kind === 'thread' ? STATUS[x.status] : x.kind === 'spot' ? `Spot check ${x.items.length}` : x.kind === 'tree' ? 'Tree' : 'Where?'}</span>{x.q}</button></li>)}</ol>
+            <span className={'tag' + (x.kind !== 'thread' ? ' dashed' : x.status === 'unsettled' ? ' red' : '')}>{x.kind === 'thread' ? STATUS[x.status] : x.kind === 'spot' ? `Spot check ${x.items.length}` : x.kind === 'tree' ? 'Tree' : 'Where?'}</span>{x.q}{x.claimedBy && <span className="sub"> · {x.claimedBy} has it open</span>}</button></li>)}</ol>
         : q.kind === 'thread' ? <ThreadQ key={q.id} q={q} v={v} send={send} skip={() => send({ skip: true })} />
         : q.kind === 'spot' ? <SpotQ key={q.items.map(i => i.id).join()} q={q} id={id} index={index} reload={reload} target={v.target} />
         : q.kind === 'tree' ? <TreeQ key={q.id} q={q} send={send} skip={() => send({ skip: true })} />
@@ -351,8 +404,9 @@ function Items({ ids, v }) {
   )
 }
 
-function Branch({ v, index, focus, setFocus }) {
+function Branch({ v, index, focus, setFocus, edit }) {
   const [open, setOpen] = useState(null)
+  const [form, setForm] = useState(null)
   const under = id => id === focus || !focus || id.startsWith(focus + '.')
   const ts = Object.values(v.threads).filter(t => under(t.branch))
   const node = focus ? index.get(focus) : null
@@ -369,7 +423,16 @@ function Branch({ v, index, focus, setFocus }) {
   const conns = Object.values(conn).sort((a, b) => b.ids.size - a.ids.size)
   return (
     <div className="lib-branch">
-      <h3>{node?.name || v.name}</h3>
+      <div className="lib-branch-head">
+        <h3>{node?.name || v.name}</h3>
+        {node && <button className="ghost" onClick={() => setForm({ kind: 'editBranch', branch: node.id, name: node.name, desc: node.desc || '' })}>Edit</button>}
+        <button className="ghost" onClick={() => setForm({ kind: 'addBranch', parent: node?.id || '', name: '', desc: '' })}>Add a part</button>
+      </div>
+      {form && (form.kind === 'editBranch' || form.kind === 'addBranch') && <div className="lib-edit">
+        <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={form.kind === 'addBranch' ? `New part of ${node?.name || v.name}` : 'Name'} />
+        <textarea rows={2} value={form.desc} onChange={e => setForm({ ...form, desc: e.target.value })} placeholder="What belongs here (this steers where things get filed)" />
+        <div className="lib-q-bar"><button className="primary" disabled={!form.name.trim()} onClick={() => { edit(form); setForm(null) }}>Save</button><button className="ghost" onClick={() => setForm(null)}>Cancel</button></div>
+      </div>}
       {node?.desc && <p className="sub">{node.desc}</p>}
       {node?.children?.length > 0 && <div className="lib-chips">{node.children.map(ch => <button key={ch.id} className="btn" onClick={() => setFocus(ch.id)}>{ch.name} <span className="sub">{v.byBranch[ch.id]?.items || 0}</span></button>)}</div>}
       {conns.length > 0 && <section><h4>Connected to <span className="sub">· items that touch both</span></h4>
@@ -387,8 +450,18 @@ function Branch({ v, index, focus, setFocus }) {
                 <button className="lib-thread-head" onClick={() => setOpen(open === t.id ? null : t.id)}>
                   <b>{t.title}</b><span className="sub">{t.first === t.last ? t.last : `${t.first} → ${t.last}`} · {t.items.length} said{t.unconfirmed ? ` · ${t.unconfirmed} not yet confirmed where they belong` : ''}</span>
                 </button>
+                {form?.thread === t.id ? <div className="lib-edit">
+                  <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
+                  <textarea rows={3} value={form.summary} onChange={e => setForm({ ...form, summary: e.target.value })} />
+                  <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>{ORDER.map(st => <option key={st} value={st}>{STATUS[st]}</option>)}</select>
+                  <textarea rows={2} value={form.decision} onChange={e => setForm({ ...form, decision: e.target.value })} placeholder="Decision (if settled)" />
+                  <div className="lib-q-bar"><button className="primary" disabled={!form.title.trim()} onClick={() => { edit(form); setForm(null) }}>Save</button><button className="ghost" onClick={() => setForm(null)}>Cancel</button></div>
+                </div> : <>
                 <p>{t.summary}</p>
-                {t.decision && <p className="lib-decision"><b>Decision{t.answeredBy ? ' (yours)' : ''}:</b> {t.decision}</p>}
+                {t.decision && <p className="lib-decision"><b>Decision{t.answeredBy ? ` (${t.answeredBy === 'owner' ? 'yours' : t.answeredBy})` : ''}:</b> {t.decision}</p>}
+                {t.editedBy && <p className="sub">Edited by {t.editedBy} {t.editedAt?.slice(0, 10)}</p>}
+                <button className="ghost" onClick={() => setForm({ kind: 'editThread', thread: t.id, title: t.title, summary: t.summary, status: t.status, decision: t.decision || '' })}>Edit topic</button>
+                </>}
                 {open === t.id && <>{t.ways?.length > 0 && <ul className="lib-ways">{t.ways.map((w, j) => <li key={j}>{w}</li>)}</ul>}<Items ids={t.items} v={v} /></>}
               </article>
             ))}
@@ -414,7 +487,7 @@ function Find({ v, id }) {
       <div className="lib-q-bar">
         <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && find()} placeholder="Where did we talk about… (e.g. ceiling, fee schedule, a client name)" />
         <button className="btn" onClick={find}>Find</button>
-        <button className="primary" disabled={!q.trim() || busy} onClick={askIt}>{busy ? 'Reading…' : 'Ask'}</button>
+        {!v.member && <button className="primary" disabled={!q.trim() || busy} onClick={askIt}>{busy ? 'Reading…' : 'Ask'}</button>}
       </div>
       {answer && <div className="lib-answer"><p>{answer.answer}</p>{answer.gaps?.length > 0 && <p className="sub">Not settled by the record: {answer.gaps.join('; ')}</p>}
         {answer.cites?.length > 0 && <Items ids={answer.cites.filter(c => v.items[c])} v={v} />}</div>}
@@ -431,7 +504,7 @@ function Links({ v, running, onRun }) {
   return (
     <div className="lib-links">
       <p className="sub">Looks across every branch for something worked out in one place that applies somewhere else. Runs on Opus; a few dollars at most. Run it weekly or after a batch of calls.</p>
-      <button className="primary" disabled={running || !v.counts.threads} onClick={onRun}>Cross-check everything</button>
+      {!v.member && <button className="primary" disabled={running || !v.counts.threads} onClick={onRun}>Cross-check everything</button>}
       {v.crosslinks.length === 0 ? <p className="sub">No cross-check yet.</p> : v.crosslinks.map(l => (
         <article key={l.id} className="lib-thread">
           <b>{l.fromName} → {l.toName}</b> <span className={'tag' + (l.strength === 'strong' ? '' : ' dashed')}>{l.strength}</span>
