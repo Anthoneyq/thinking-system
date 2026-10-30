@@ -4665,15 +4665,20 @@ function vtt(text) {
   }
   return turns;
 }
-const person = (s) => s.trim().split(/[,\s]/)[0].replace(/^([A-Z][a-z]+)[A-Z].*$/, "$1");
-const TEAMS = /^\s*([A-Z][^\d]{1,60}?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s+(.*)$/;
+const person = (s) => /^\s*\[/.test(s) ? s.trim().replace(/^\[|\]$/g, "") : s.trim().split(/[,\s]/)[0].replace(/^([A-Z][a-z]+)[A-Z].*$/, "$1");
+function scrub(text, names = {}) {
+  const keys = Object.keys(names).sort((a, b) => b.length - a.length);
+  const esc = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return keys.length ? text.replace(new RegExp(`(?<![\\w\\[])(${keys.map(esc).join("|")})(?![\\w\\]])`, "g"), (m) => `[${names[m]}]`) : text;
+}
+const TEAMS = /^\s*([A-Z[][^\d]{1,60}?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s+(.*)$/;
 function plain(text) {
   const lines = text.replace(/\r/g, "").split("\n");
   if (lines.filter((l) => TEAMS.test(l)).length > 5) {
     return lines.map((l) => l.match(TEAMS)).filter(Boolean).map(([, who, at, t]) => ({ at, who: person(who), text: t.trim() }));
   }
   return text.replace(/\r/g, "").split(/\n\s*\n/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean).map((p) => {
-    const m = p.match(/^([A-Z][\w.'-]*(?: [A-Z][\w.'-]*){0,3}):\s+(.*)$/);
+    const m = p.match(/^(\[[^\]]{1,40}\]|[A-Z][\w.'-]*(?: [A-Z][\w.'-]*){0,3}):\s+(.*)$/);
     return m ? { at: "", who: person(m[1]), text: m[2] } : { at: "", who: "", text: p };
   });
 }
@@ -4686,14 +4691,14 @@ function callDate(path) {
   const m = basename(path).match(/(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : statSync(path).mtime.toISOString().slice(0, 10);
 }
-function parseFile(path) {
+function parseFile(path, names) {
   const ext = extname(path).toLowerCase();
-  const raw = ext === ".docx" ? docx(path) : readFileSync(path, "utf8");
+  const raw = scrub(ext === ".docx" ? docx(path) : readFileSync(path, "utf8"), names);
   const turns = ext === ".vtt" ? vtt(raw) : plain(raw);
   const text = turns.map((t) => `${t.at ? `[${t.at}] ` : ""}${t.who ? t.who + ": " : ""}${t.text}`).join("\n");
   return {
     file: basename(path),
-    title: basename(path, extname(path)).replace(/^\d{4}-\d{2}-\d{2}\s*/, ""),
+    title: scrub(basename(path, extname(path)), names).replace(/^\d{4}-\d{2}-\d{2}\s*/, ""),
     date: callDate(path),
     hash: createHash("sha1").update(text).digest("hex").slice(0, 12),
     speakers: [...new Set(turns.map((t) => t.who).filter(Boolean))],
@@ -4724,6 +4729,7 @@ const ITEM_TYPES = ["decision", "open", "assumption", "todo", "idea", "fact", "p
 const THREAD_STATUS = ["decided", "unsettled", "open", "assumed", "done"];
 const SCHEMAS = {
   extract: obj({
+    title: str,
     summary: str,
     items: arr(obj({
       type: oneOf(...ITEM_TYPES),
@@ -4765,6 +4771,8 @@ Rules:
 - Never invent. Every item traces to words in the transcript; "quote" is copied exactly (up to 25 words) and "at" is the time shown before it.
 - Keep the speaker's meaning. Brainstorms are ideas, not decisions. A decision needs someone with the say agreeing to it.
 - Transcription garbles names, numbers and product words. Read them from context and say so in "context" when unsure.
+- No names of people. Use the labels the transcript gives (e.g. "Principal 1", "Attorney 2"), in every field including "who" and "quote"; anyone still named is written by role ("an attorney", "the insured"). Companies, products and storms keep their names.
+- Leave out personal life (health, family, faith, travel, hobbies, home), even as context.
 - Plain words, short sentences.`;
 const outline = (tree, depth = 0) => tree.map((n) => `${"  ".repeat(depth)}- ${n.id}: ${n.name}${n.desc ? " — " + n.desc : ""}
 ${n.children?.length ? outline(n.children, depth + 1) : ""}`).join("");
@@ -4794,6 +4802,7 @@ For each item:
 - "branch": the tree id it belongs to, "none" if it fits nowhere; "confidence" 0 to 1 that the branch is right.
 - "also": other tree ids this item clearly also touches, because it is about both (a fee for website work touches pricing and the website). At most 3; [] when it sits in one place. Not branches you are merely unsure between.
 - "new_branch": if no branch fits well, a short name for the branch that should exist; else "".
+- "title": a short title for the whole conversation, 3 to 8 words, no names (e.g. "Isaias page layout and team section").
 - "summary": two or three lines on what this ${parts > 1 ? "part of the " : ""}conversation covered.
 
 Transcript:
@@ -5233,7 +5242,7 @@ function scan(id) {
       const known = Object.values(s.calls).find((c2) => c2.file === f && c2.dir === dir);
       let c;
       try {
-        c = parseFile(join(dir, f));
+        c = parseFile(join(dir, f), lib2.names);
       } catch (e) {
         if (!known) s.calls["err-" + f] = { id: "err-" + f, file: f, dir, date: "", status: "error", error: e.message };
         continue;
@@ -5302,7 +5311,7 @@ async function pipeline(id, model, only) {
   const s = load(id), lib2 = LIBS.get(id);
   const todo = Object.values(s.calls).filter((c) => (c.status === "new" || c.status === "error" && c.hash) && (!only || c.file.includes(only)));
   const parts = todo.flatMap((c) => {
-    const text = parseFile(join(c.dir, c.file)).text;
+    const text = parseFile(join(c.dir, c.file), lib2.names).text;
     const cs = chunks(text);
     return cs.map((t, i) => ({ call: c, part: i + 1, parts: cs.length, text: t }));
   });
@@ -5345,6 +5354,7 @@ async function pipeline(id, model, only) {
         };
         fresh.push(iid);
       }
+      if (p.part === 1 && res.out.title && /^[\d\s-]*$/.test(p.call.title)) p.call.title = res.out.title;
       p.call.summary = [p.call.summary, res.out.summary].filter(Boolean).join(" ");
       p.call.items = (p.call.items || 0) + res.out.items.length;
       done.set(p.call.id, (done.get(p.call.id) || 0) + 1);

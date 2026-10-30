@@ -20,7 +20,7 @@ export const TARGET = 0.95 // a rule files on its own once your spot checks find
 const MIN_CHECKS = 20, CHECK_EVERY = 50, SPOT = 10 // checks per rule: 20 to trust it, then one per 50 items it files
 const CONCURRENCY = 3, LINK_BATCH = 60
 
-// Libraries come from ~/.thinking-system/config.json: { "libraries": [{ "id", "name", "sources": [folders], "dir" }] }.
+// Libraries come from ~/.thinking-system/config.json: { "libraries": [{ "id", "name", "sources": [folders], "dir", "names"? }] }; "names" maps real names to labels, scrubbed before reading.
 const LIBS = new Map((config.libraries || []).map(l => [l.id, { ...l, sources: [].concat(l.sources || l.source || []) }]))
 const states = new Map()
 
@@ -257,7 +257,7 @@ export function scan(id) {
     {
       const known = Object.values(s.calls).find(c => c.file === f && c.dir === dir)
       let c
-      try { c = parseFile(join(dir, f)) } catch (e) { if (!known) s.calls['err-' + f] = { id: 'err-' + f, file: f, dir, date: '', status: 'error', error: e.message }; continue }
+      try { c = parseFile(join(dir, f), lib.names) } catch (e) { if (!known) s.calls['err-' + f] = { id: 'err-' + f, file: f, dir, date: '', status: 'error', error: e.message }; continue }
       if (known && known.hash === c.hash) continue
       // A file that changed (a project note gets updated) replaces its earlier reading.
       if (known) { for (const i of Object.values(s.items)) if (i.call === known.id) delete s.items[i.id]; delete s.calls[known.id]; seen.delete(known.hash) }
@@ -315,7 +315,7 @@ async function pipeline(id, model, only) {
   const s = load(id), lib = LIBS.get(id)
   const todo = Object.values(s.calls).filter(c => (c.status === 'new' || c.status === 'error' && c.hash) && (!only || c.file.includes(only)))
   const parts = todo.flatMap(c => {
-    const text = parseFile(join(c.dir, c.file)).text
+    const text = parseFile(join(c.dir, c.file), lib.names).text
     const cs = chunks(text)
     return cs.map((t, i) => ({ call: c, part: i + 1, parts: cs.length, text: t }))
   })
@@ -344,6 +344,8 @@ async function pipeline(id, model, only) {
         }
         fresh.push(iid)
       }
+      // A file named only by its time ("2026-10-29 1427") takes its title from the reading.
+      if (p.part === 1 && res.out.title && /^[\d\s-]*$/.test(p.call.title)) p.call.title = res.out.title
       p.call.summary = [p.call.summary, res.out.summary].filter(Boolean).join(' ')
       p.call.items = (p.call.items || 0) + res.out.items.length
       done.set(p.call.id, (done.get(p.call.id) || 0) + 1)

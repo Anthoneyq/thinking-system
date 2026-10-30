@@ -28,11 +28,18 @@ function vtt(text) {
   return turns
 }
 
-// "Jane L. Doe, PE, CFM", "JaneLDoePECFM" and "Sam Q., MBA" all become a first name.
-export const person = s => s.trim().split(/[,\s]/)[0].replace(/^([A-Z][a-z]+)[A-Z].*$/, '$1')
+// "Jane L. Doe, PE, CFM", "JaneLDoePECFM" and "Sam Q., MBA" all become a first name; a scrubbed "[Staff 1]" stays whole.
+export const person = s => /^\s*\[/.test(s) ? s.trim().replace(/^\[|\]$/g, '') : s.trim().split(/[,\s]/)[0].replace(/^([A-Z][a-z]+)[A-Z].*$/, '$1')
+
+// Scrubbing: each real name (longest first, whole words) becomes its label, e.g. "Jane L. Doe, PE" → "[Principal 1]".
+export function scrub(text, names = {}) {
+  const keys = Object.keys(names).sort((a, b) => b.length - a.length)
+  const esc = k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return keys.length ? text.replace(new RegExp(`(?<![\\w\\[])(${keys.map(esc).join('|')})(?![\\w\\]])`, 'g'), m => `[${names[m]}]`) : text
+}
 
 // Teams Word export: "Name   0:03 words" per line.
-const TEAMS = /^\s*([A-Z][^\d]{1,60}?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s+(.*)$/
+const TEAMS = /^\s*([A-Z[][^\d]{1,60}?)\s{2,}(\d{1,2}:\d{2}(?::\d{2})?)\s+(.*)$/
 
 // Plain text: Teams lines or "Name: words" lines become turns; anything else is one turn per paragraph.
 function plain(text) {
@@ -41,7 +48,7 @@ function plain(text) {
     return lines.map(l => l.match(TEAMS)).filter(Boolean).map(([, who, at, t]) => ({ at, who: person(who), text: t.trim() }))
   }
   return text.replace(/\r/g, '').split(/\n\s*\n/).map(p => p.replace(/\s+/g, ' ').trim()).filter(Boolean).map(p => {
-    const m = p.match(/^([A-Z][\w.'-]*(?: [A-Z][\w.'-]*){0,3}):\s+(.*)$/)
+    const m = p.match(/^(\[[^\]]{1,40}\]|[A-Z][\w.'-]*(?: [A-Z][\w.'-]*){0,3}):\s+(.*)$/)
     return m ? { at: '', who: person(m[1]), text: m[2] } : { at: '', who: '', text: p }
   })
 }
@@ -58,14 +65,15 @@ export function callDate(path) {
   return m ? m[1] : statSync(path).mtime.toISOString().slice(0, 10)
 }
 
-export function parseFile(path) {
+// `names`: the library's scrub list, applied before anything is read so no real name reaches a model or the record.
+export function parseFile(path, names) {
   const ext = extname(path).toLowerCase()
-  const raw = ext === '.docx' ? docx(path) : readFileSync(path, 'utf8')
+  const raw = scrub(ext === '.docx' ? docx(path) : readFileSync(path, 'utf8'), names)
   const turns = ext === '.vtt' ? vtt(raw) : plain(raw)
   const text = turns.map(t => `${t.at ? `[${t.at}] ` : ''}${t.who ? t.who + ': ' : ''}${t.text}`).join('\n')
   return {
     file: basename(path),
-    title: basename(path, extname(path)).replace(/^\d{4}-\d{2}-\d{2}\s*/, ''),
+    title: scrub(basename(path, extname(path)), names).replace(/^\d{4}-\d{2}-\d{2}\s*/, ''),
     date: callDate(path),
     hash: createHash('sha1').update(text).digest('hex').slice(0, 12),
     speakers: [...new Set(turns.map(t => t.who).filter(Boolean))],

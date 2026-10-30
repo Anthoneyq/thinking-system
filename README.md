@@ -83,6 +83,8 @@ Set it up in `~/.thinking-system/config.json`:
 
 Put your tree in `<dir>/tree.json` (`{ "name": "Acme Co", "branches": [{ "id": "ops", "name": "Running a job", "desc": "...", "children": [...] }] }`); good descriptions make filing sharper. Then open http://localhost:4477/library/acme, or `/conversations` in Claude Code, or `think library acme status|scan|process|next|answer|ask|crosscheck`. The record is also written as `<dir>/INDEX.md`, with how sure each rule is and which branches connect most. Haiku reads (about $0.03 a call, set `readModel` on the library to change it) and Sonnet ties topics (`topicModel`); filing with Jev is a fraction of a cent.
 
+No names in the record: add `"names": { "Jane Doe": "Principal 1", "Jane": "Principal 1" }` to the library and each name becomes its label before any model reads it (file titles too). Transcripts already scrubbed to labels like `[Attorney 1]` work as they are. Anyone else still named is written by role, and personal talk is left out. Files named only by date and time (`2026-10-29 1427.vtt`) get a title from the reading.
+
 ## How it works
 
 - `server/engine.js`: run state, scheduler and the loop (frame, branch, come together, grow, ask, review, decide).

@@ -11,6 +11,7 @@ export const THREAD_STATUS = ['decided', 'unsettled', 'open', 'assumed', 'done']
 
 export const SCHEMAS = {
   extract: obj({
+    title: str,
     summary: str,
     items: arr(obj({
       type: oneOf(...ITEM_TYPES),
@@ -53,6 +54,8 @@ Rules:
 - Never invent. Every item traces to words in the transcript; "quote" is copied exactly (up to 25 words) and "at" is the time shown before it.
 - Keep the speaker's meaning. Brainstorms are ideas, not decisions. A decision needs someone with the say agreeing to it.
 - Transcription garbles names, numbers and product words. Read them from context and say so in "context" when unsure.
+- No names of people. Use the labels the transcript gives (e.g. "Principal 1", "Attorney 2"), in every field including "who" and "quote"; anyone still named is written by role ("an attorney", "the insured"). Companies, products and storms keep their names.
+- Leave out personal life (health, family, faith, travel, hobbies, home), even as context.
 - Plain words, short sentences.`
 
 const outline = (tree, depth = 0) => tree.map(n => `${'  '.repeat(depth)}- ${n.id}: ${n.name}${n.desc ? ' — ' + n.desc : ''}\n${n.children?.length ? outline(n.children, depth + 1) : ''}`).join('')
@@ -80,6 +83,7 @@ For each item:
 - "branch": the tree id it belongs to, "none" if it fits nowhere; "confidence" 0 to 1 that the branch is right.
 - "also": other tree ids this item clearly also touches, because it is about both (a fee for website work touches pricing and the website). At most 3; [] when it sits in one place. Not branches you are merely unsure between.
 - "new_branch": if no branch fits well, a short name for the branch that should exist; else "".
+- "title": a short title for the whole conversation, 3 to 8 words, no names (e.g. "Isaias page layout and team section").
 - "summary": two or three lines on what this ${parts > 1 ? 'part of the ' : ''}conversation covered.
 
 Transcript:
