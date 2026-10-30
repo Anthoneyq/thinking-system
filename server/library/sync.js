@@ -7,7 +7,8 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 
 import { join, extname } from 'node:path'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { load, save, getLibrary, applyRemote, replaceBase, bus } from './library.js'
+import { load, save, getLibrary, applyRemote, replaceBase, bus, readUpload, scan, processLibrary, preRead } from './library.js'
+import { aiStatus } from '../ai.js'
 import { KINDS } from './parse.js'
 
 const API = 'https://api.github.com'
@@ -71,19 +72,28 @@ export async function sync(id, { push = true } = {}) {
     // My unsent changes count too: a new base must not drop them.
     const applied = applyRemote(id, [...ops, ...(load(id).outbox || [])])
     if (applied) dirty = true
-    // The reader brings down calls members added.
+    // The reader brings down transcripts members added, and the readings they made with their own AI.
+    const fresh = []
     if (lib.sync.role === 'reader') {
       const dir = lib.sources.find(x => existsSync(x) && !extname(x))
+      mkdirSync(join(lib.dir, 'reads'), { recursive: true })
       for (const [path, sha] of Object.entries(r.files)) {
+        if (path.startsWith('data/reads/') && seen[path] !== sha) { writeFileSync(join(lib.dir, 'reads', path.slice('data/reads/'.length)), await blob(lib, sha)); seen[path] = sha }
         const name = path.slice('data/Transcripts/'.length)
         if (!path.startsWith('data/Transcripts/') || name.includes('/') || existsSync(join(dir, name))) continue
-        writeFileSync(join(dir, name), await blob(lib, sha)); dirty = true
+        writeFileSync(join(dir, name), await blob(lib, sha)); dirty = true; fresh.push(name)
       }
     }
     const state = load(id)
     state.syncState = { ...state.syncState, seen }
     if (push) await send(id, lib, r)
     state.syncState = { ...state.syncState, last: new Date().toISOString(), error: '' }
+    // Already read by the teammates who added them: take them in now (filing and topics only, no reading cost).
+    if (fresh.length) {
+      scan(id)
+      const waiting = Object.values(load(id).calls).filter(c => c.status === 'new')
+      if (waiting.length && waiting.every(c => preRead(id, c))) processLibrary(id)
+    }
   } catch (e) {
     load(id).syncState = { ...load(id).syncState, error: e.message.slice(0, 200) }
   } finally {
@@ -103,6 +113,8 @@ async function send(id, lib, r) {
   const log = Buffer.from((existsSync(mine) ? readFileSync(mine, 'utf8') : '') + (s.outbox || []).map(o => JSON.stringify(o) + '\n').join(''))
   if (log.length) files[`data/changes/${me}.jsonl`] = log
   for (const f of s.outfiles || []) if (existsSync(f.path)) files[`data/Transcripts/${f.name}`] = readFileSync(f.path)
+  const reads = (s.outreads || []).length
+  for (const f of s.outreads || []) if (existsSync(f.path)) files[`data/reads/${f.name}.json`] = readFileSync(f.path)
   if (lib.sync.role === 'reader') {
     for (const f of RECORD) files[`data/record/${f}`] = readFileSync(join(lib.dir, f))
     const dir = lib.sources.find(x => existsSync(x) && !extname(x))
@@ -131,6 +143,7 @@ async function send(id, lib, r) {
   if (log.length) writeFileSync(mine, log)
   s.outbox = (s.outbox || []).slice(sent)
   s.outfiles = (s.outfiles || []).slice(calls)
+  s.outreads = (s.outreads || []).slice(reads)
 }
 
 // A call a member adds: kept here until it is sent, then the reader reads it.
@@ -141,8 +154,11 @@ export function addTranscript(id, name, base64) {
   mkdirSync(dir, { recursive: true })
   const path = join(dir, name.replace(/[\\/:*?"<>|]/g, '-'))
   writeFileSync(path, Buffer.from(base64, 'base64'))
-  ;(s.outfiles ||= []).push({ name: path.split(/[\\/]/).at(-1), path })
+  const file = path.split(/[\\/]/).at(-1)
+  ;(s.outfiles ||= []).push({ name: file, path })
   save(id)
+  // With their own AI connected, the teammate reads it here; without, it goes up unread and the reader reads it.
+  if (lib.sync?.role === 'member' && aiStatus().loggedIn) readUpload(id, path, file)
 }
 
 // Sync on a timer, and soon after any change made here.

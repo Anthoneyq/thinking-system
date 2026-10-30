@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, go } from './api.js'
 import RunView from './RunView.jsx'
 import LibraryView from './LibraryView.jsx'
+import Theme from './Theme.jsx'
 
 export default function App() {
   if (import.meta.env.VITE_REPLAY) return <Replay />
@@ -67,6 +68,7 @@ function Home() {
       <header className="home-top">
         <span className="brand"><i />Thinking System</span>
         <span className="sub">Incomplete thought in. Clear next action out.</span>
+        <span style={{ marginLeft: 'auto' }}><Theme /></span>
       </header>
       <section className="home-hero">
         <h1>What are you<br />thinking about?</h1>

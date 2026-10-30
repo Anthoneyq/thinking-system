@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, go } from './api.js'
+import Theme from './Theme.jsx'
 
 // Conversations mode: the business tree as a spider web you can step into, and one list of what it still needs from you.
 const STATUS = { unsettled: 'Never settled', open: 'Open', assumed: 'Assumed', decided: 'Decided', done: 'Done' }
@@ -28,6 +29,7 @@ export default function LibraryView({ id }) {
   const [selected, setSelected] = useState(null)
   const setFocus = f => { setFocusRaw(f); setSelected(null) }
   const [tab, setTab] = useState('needs')
+  const [link, setLink] = useState(null)
   const [busy, setBusy] = useState('')
   const index = useMemo(() => {
     const m = new Map()
@@ -56,25 +58,27 @@ export default function LibraryView({ id }) {
           <span className="sub">{c.calls} calls · {c.items} items · {c.filed} filed · {c.guessed} best guesses · {c.links} links · {c.threads} topics · ${c.cost.toFixed(2)} spent</span>
         </div>
         <div className="lib-actions">
+          {v.member && !v.ai?.loggedIn && <ConnectAI v={v} act={act} busy={busy} />}
           {v.sync && <Sync v={v} busy={busy} act={act} />}
           {!v.member && <>
-          <button className="btn" disabled={running || !!busy} onClick={() => act('scan')}>Check for new calls</button>
-          {v.estimate.calls > 0 && <button className="primary" disabled={running || !!busy} onClick={() => act('process')}>Read {v.estimate.calls} new call{v.estimate.calls > 1 ? 's' : ''} (~${v.estimate.usd.toFixed(2)})</button>}
+          <button className="btn" disabled={running || !!busy} onClick={() => act('scan')}>Check for new transcripts</button>
+          {v.estimate.calls > 0 && <button className="primary" disabled={running || !!busy} onClick={() => act('process')}>Read {v.estimate.calls} new transcript{v.estimate.calls > 1 ? 's' : ''} (~${v.estimate.usd.toFixed(2)})</button>}
           {v.pending > 0 && <button className="primary" disabled={running || !!busy} title="Places everything not yet filed again with your answers as examples, then rewrites only the topics whose items moved" onClick={() => act('refresh')}>Update with {v.pending} change{v.pending > 1 ? 's' : ''}</button>}
           </>}
+          <Theme />
         </div>
       </header>
       {v.job && (running || v.job.log.length > 0) && <Job job={v.job} onStop={() => act('stop')} />}
       <div className="lib-body">
         <section className="lib-map">
           <Crumbs index={index} focus={focus} setFocus={setFocus} name={v.name} />
-          <Web v={v} index={index} focus={focus} selected={selected} setFocus={setFocus} onPick={pick} />
+          <Web v={v} index={index} focus={focus} selected={selected} setFocus={setFocus} onPick={pick} link={link} onLink={l => { setLink(l); setTab('link') }} />
           <WebList v={v} index={index} focus={focus} setFocus={setFocus} onPick={pick} />
           <p className="lib-legend sub"><b className="dot red" /> questions waiting on you there <b className="dot" /> items that live there <b className="line" /> items that touch both branches. Click a branch to step into it; click the middle to step back out.</p>
         </section>
         <aside className="lib-panel">
           <div className="seg lib-tabs" role="tablist">
-            {[['needs', `Needs you${v.questions.length ? ` (${v.questions.filter(q => q.now).length || v.questions.length})` : ''}`], ['branch', 'Branch'], ['find', 'Find'], ['links', 'Applies elsewhere'], ['calls', 'Calls'], ...(v.sync || v.log?.length ? [['changes', 'Changes']] : [])].map(([k, label]) =>
+            {[['needs', `Needs you${v.questions.length ? ` (${v.questions.filter(q => q.now).length || v.questions.length})` : ''}`], ['branch', 'Branch'], ...(link ? [['link', 'Connection']] : []), ['cats', `Categories${v.proposals?.length ? ` (${v.proposals.length} proposed)` : ''}`], ['find', 'Find'], ['links', 'Applies elsewhere'], ['calls', 'Transcripts'], ...(v.sync || v.log?.length ? [['changes', 'Changes']] : [])].map(([k, label]) =>
               <button key={k} role="tab" aria-checked={tab === k} onClick={() => setTab(k)}>{label}</button>)}
           </div>
           {tab === 'needs' && <Needs v={v} index={index} id={id} reload={reload} onPlace={pick} />}
@@ -83,6 +87,8 @@ export default function LibraryView({ id }) {
           {tab === 'links' && <Links v={v} running={running} onRun={() => act('crosscheck')} />}
           {tab === 'calls' && <Calls v={v} />}
           {tab === 'changes' && <Changes v={v} />}
+          {tab === 'link' && link && <Connection v={v} index={index} link={link} onClose={() => { setLink(null); setTab('branch') }} />}
+          {tab === 'cats' && <Categories v={v} index={index} act={act} busy={busy} onPick={pick} />}
         </aside>
       </div>
     </main>
@@ -103,9 +109,85 @@ function Sync({ v, busy, act }) {
       {y.error ? 'Offline: changes wait here' : y.waiting ? `${y.waiting} waiting to send` : y.last ? `Synced ${new Date(y.last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced yet'} · {v.me}
     </span>
     <button className="ghost" disabled={!!busy} onClick={() => act('sync')}>Sync now</button>
-    <button className="btn" disabled={!!busy} onClick={() => file.current.click()} title="Scrubbed transcripts (.vtt, .docx, .md, .txt). They are read on the next update.">Add calls</button>
+    <button className="btn" disabled={!!busy} onClick={() => file.current.click()} title="Scrubbed transcripts (.vtt, .docx, .md, .txt). With your AI connected they're read on this computer; otherwise on the next update.">Add transcripts</button>
     <input ref={file} type="file" multiple accept=".vtt,.docx,.md,.txt" hidden onChange={add} />
   </>
+}
+
+// A teammate's own AI (Claude Code on their plan) reads what they add. One click opens a window that installs it and signs in.
+function ConnectAI({ v, act, busy }) {
+  const [started, setStarted] = useState(false)
+  useEffect(() => { if (!started) return; const t = setInterval(() => act('aicheck'), 6000); return () => clearInterval(t) }, [started])
+  return (
+    <span className="lib-ai">
+      {started && <span className="sub">Finish in the window that opened. This updates by itself when you're signed in.</span>}
+      <button className="primary" disabled={!!busy} onClick={() => { setStarted(true); act('connect') }} title="Installs Claude on this computer if needed and signs you in, so the transcripts you add are read with your AI">
+        {started ? 'Open the window again' : 'Connect your AI'}</button>
+    </span>
+  )
+}
+
+// What links two branches: items that live under one and touch the other.
+function Connection({ v, index, link, onClose }) {
+  const under = (id, top) => id === top || id.startsWith(top + '.')
+  const ids = Object.values(v.items).filter(i => !i.dup && i.links?.length && ((under(i.branch, link.a) && i.links.some(l => under(l, link.b))) || (under(i.branch, link.b) && i.links.some(l => under(l, link.a))))).map(i => i.id)
+  const name = id => index.get(id)?.name || id
+  return (
+    <div className="lib-branch">
+      <div className="lib-branch-head"><h3>{name(link.a)} ↔ {name(link.b)}</h3><button className="ghost" onClick={onClose}>Close</button></div>
+      <p className="sub">{ids.length} item{ids.length === 1 ? '' : 's'} live in one and touch the other.</p>
+      <Items ids={ids} v={v} />
+    </div>
+  )
+}
+
+// The tree's categories, and the ones the readers say are missing. Add a proposal and its items move in.
+function Categories({ v, index, act, busy, onPick }) {
+  const [open, setOpen] = useState(null)
+  const [show, setShow] = useState('proposed')
+  const [edit, setEdit] = useState({})
+  const props = v.proposals || []
+  const canSuggest = !v.member || v.ai?.loggedIn
+  const top = [...index.values()]
+  return (
+    <div className="lib-cats">
+      <div className="seg lib-now" role="radiogroup">
+        <button role="radio" aria-checked={show === 'proposed'} onClick={() => setShow('proposed')}>Proposed ({props.length})</button>
+        <button role="radio" aria-checked={show === 'all'} onClick={() => setShow('all')}>All categories ({index.size})</button>
+      </div>
+      {show === 'proposed' ? <section>
+        <p className="sub">Where filing keeps struggling, the readers name the category that should exist. Add one and its items move in; tidy names and where it goes first.</p>
+        {canSuggest && <button className="btn" disabled={!!busy} onClick={() => act('suggest')}>{busy === 'suggest' ? 'Thinking…' : 'Suggest more with AI'}</button>}
+        {!props.length && <p className="sub">Nothing proposed right now.</p>}
+        {props.map(p => {
+          const e = edit[p.key] || { name: p.name, parent: p.parent, desc: p.desc || '' }
+          const set = x => setEdit({ ...edit, [p.key]: { ...e, ...x } })
+          return (
+            <article key={p.key} className={'lib-prop' + (open === p.key ? ' open' : '')}>
+              <div className="lib-prop-head"><b>{p.name}</b><span className="sub">under {p.where} · {p.items.length} item{p.items.length === 1 ? '' : 's'}{p.from === 'ai' ? ' · AI' : ''}</span>
+                <button className="ghost" onClick={() => setOpen(open === p.key ? null : p.key)}>{open === p.key ? 'Hide' : 'Look'}</button></div>
+              {p.why && <p className="sub">{p.why}</p>}
+              {open === p.key && <>
+                <div className="lib-edit">
+                  <input value={e.name} onChange={x => set({ name: x.target.value })} />
+                  <select value={e.parent} onChange={x => set({ parent: x.target.value })}><option value="">Top level</option>{top.map(n => <option key={n.id} value={n.id}>{'  '.repeat(n.depth)}{n.name}</option>)}</select>
+                  <textarea rows={2} value={e.desc} onChange={x => set({ desc: x.target.value })} placeholder="What belongs here (this steers filing)" />
+                  <div className="lib-q-bar">
+                    <button className="primary" disabled={!e.name.trim() || !!busy} onClick={() => act('change', { kind: 'addBranch', parent: e.parent, name: e.name.trim(), desc: e.desc, items: p.items, key: p.key })}>Add category</button>
+                    <button className="ghost" disabled={!!busy} onClick={() => act('change', { kind: 'dismissProposal', key: p.key, name: p.name })}>Not needed</button>
+                  </div>
+                </div>
+                <Items ids={p.items} v={v} />
+              </>}
+            </article>
+          )
+        })}
+      </section> : <section>
+        <p className="sub">Click one to open it. To rename, describe or add a part, use Edit and Add a part on its Branch page.</p>
+        <ul className="lib-tree-list">{top.map(n => <li key={n.id}><button className="ghost" style={{ paddingLeft: 8 + n.depth * 16 }} onClick={() => onPick(n.id)}>{n.name}</button><span className="sub">{v.byBranch[n.id]?.items || 0}</span></li>)}</ul>
+      </section>}
+    </div>
+  )
 }
 
 // Who changed what, newest first, with what was there before.
@@ -154,7 +236,9 @@ function Crumbs({ index, focus, setFocus, name }) {
 }
 
 // The spider web: the focus in the middle, its branches around it, and each branch's own parts as small satellites.
-function Web({ v, index, focus, selected, setFocus, onPick }) {
+function Web({ v, index, focus, selected, setFocus, onPick, link, onLink }) {
+  const [hover, setHover] = useState(-1)
+  const [every, setEvery] = useState(false)
   const node = focus ? index.get(focus) : null
   const kids = (node ? node.children : v.tree.branches) || []
   const W = 900, H = 640, cx = W / 2, cy = H / 2
@@ -172,15 +256,24 @@ function Web({ v, index, focus, selected, setFocus, onPick }) {
     const key = Math.min(a, b) + '|' + Math.max(a, b)
     pairs[key] = (pairs[key] || 0) + 1
   }
-  const links = Object.entries(pairs).sort((x, y) => y[1] - x[1]).slice(0, 18)
+  const links = Object.entries(pairs).sort((x, y) => y[1] - x[1]).slice(0, every ? 999 : 18)
   const most = Math.max(1, ...links.map(l => l[1]))
   return (
+    <>
+    {Object.keys(pairs).length > 18 && <div className="lib-map-bar"><span className="sub">Click a line to see what connects two branches; point at a branch to light up its lines.</span>
+      <button className="ghost" onClick={() => setEvery(!every)}>{every ? 'Strongest links only' : `Show all ${Object.keys(pairs).length} links`}</button></div>}
     <svg className="lib-web" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Business tree">
       {[0.55, 1, 1.32].map(f => <ellipse key={f} cx={cx} cy={cy} rx={R * f * 1.45} ry={R * f} className="web-ring" />)}
       {links.map(([key, n]) => {
         const [a, b] = key.split('|').map(Number), p = pos[a], q = pos[b]
         const mx = cx + ((p.x + q.x) / 2 - cx) * 0.35, my = cy + ((p.y + q.y) / 2 - cy) * 0.35
-        return <path key={key} d={`M${p.x},${p.y} Q${mx},${my} ${q.x},${q.y}`} className="web-link" style={{ strokeWidth: 1 + 7 * Math.sqrt(n / most), opacity: 0.25 + 0.6 * n / most }}><title>{n} item(s) touch both {kids[a].name} and {kids[b].name}</title></path>
+        const on = link && [kids[a].id, kids[b].id].sort().join('|') === [link.a, link.b].sort().join('|')
+        const d = `M${p.x},${p.y} Q${mx},${my} ${q.x},${q.y}`
+        // A wide invisible line on top, so a thin link is still easy to click.
+        return <g key={key} className="web-link-g" onClick={() => onLink({ a: kids[a].id, b: kids[b].id })}>
+          <path d={d} className={'web-link' + (on ? ' on' : hover >= 0 && hover !== a && hover !== b ? ' dim' : '')} style={{ strokeWidth: 2 + 7 * Math.sqrt(n / most), opacity: 0.25 + 0.6 * n / most }} />
+          <path d={d} className="web-hit"><title>{n} item(s) touch both {kids[a].name} and {kids[b].name}. Click to see them.</title></path>
+        </g>
       })}
       {kids.map((k, i) => {
         const { a, x, y } = pos[i]
@@ -188,7 +281,7 @@ function Web({ v, index, focus, selected, setFocus, onPick }) {
         const r = 16 + 22 * Math.sqrt(st.items / max)
         const sub = k.children || []
         return (
-          <g key={k.id} className={'web-node' + (st.items ? '' : ' empty')} onClick={() => sub.length ? setFocus(k.id) : onPick(k.id)} tabIndex={0}
+          <g key={k.id} className={'web-node' + (st.items ? '' : ' empty')} onClick={() => sub.length ? setFocus(k.id) : onPick(k.id)} tabIndex={0} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
             onKeyDown={e => e.key === 'Enter' && (sub.length ? setFocus(k.id) : onPick(k.id))}>
             <line x1={cx} y1={cy} x2={x} y2={y} className="web-spoke" />
             {sub.map((g, j) => {
@@ -212,6 +305,7 @@ function Web({ v, index, focus, selected, setFocus, onPick }) {
         {focus && <text x={cx} y={cy + 34} className="web-center-sub">← step out</text>}
       </g>
     </svg>
+    </>
   )
 }
 
@@ -487,7 +581,7 @@ function Find({ v, id }) {
       <div className="lib-q-bar">
         <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && find()} placeholder="Where did we talk about… (e.g. ceiling, fee schedule, a client name)" />
         <button className="btn" onClick={find}>Find</button>
-        {!v.member && <button className="primary" disabled={!q.trim() || busy} onClick={askIt}>{busy ? 'Reading…' : 'Ask'}</button>}
+        {(!v.member || v.ai?.loggedIn) && <button className="primary" disabled={!q.trim() || busy} onClick={askIt}>{busy ? 'Reading…' : 'Ask'}</button>}
       </div>
       {answer && <div className="lib-answer"><p>{answer.answer}</p>{answer.gaps?.length > 0 && <p className="sub">Not settled by the record: {answer.gaps.join('; ')}</p>}
         {answer.cites?.length > 0 && <Items ids={answer.cites.filter(c => v.items[c])} v={v} />}</div>}
@@ -521,7 +615,7 @@ function Calls({ v }) {
       {v.calls.map(c => (
         <li key={c.id}>
           <div><b>{c.title || c.file}</b> <span className={'pill s-' + (c.status === 'done' ? 'done' : c.status === 'error' ? 'error' : 'paused')}>{c.status === 'dup' ? 'duplicate' : c.status}</span></div>
-          <span className="sub">{c.date}{c.speakers?.length ? ' · ' + c.speakers.join(', ') : ''}{c.items ? ` · ${c.items} items` : ''}</span>
+          <span className="sub">{c.date}{c.speakers?.length ? ' · ' + c.speakers.join(', ') : ''}{c.items ? ` · ${c.items} items` : ''}{c.readBy ? ` · read by ${c.readBy}` : ''}</span>
           {c.dupOf && <p className="sub">Same words as {c.dupOf}; skipped.</p>}
           {c.error && <p className="error-line">{c.error}</p>}
           {c.summary && <p>{c.summary}</p>}

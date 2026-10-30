@@ -46,6 +46,7 @@ export const SCHEMAS = {
     links: arr(obj({ from: str, to: str, idea: str, action: str, strength: oneOf('strong', 'possible') })),
   }),
   ask: obj({ answer: str, cites: arr(str), gaps: arr(str) }),
+  suggest: obj({ categories: arr(obj({ name: str, parent: str, desc: str, why: str, items: arr(str) })) }),
 }
 
 export const SYSTEM = `You read a business's recorded conversations and turn them into a clean, traceable record.
@@ -138,4 +139,17 @@ ${threads.map(t => `${t.id} [${t.status}] ${t.path}: ${t.title} — ${t.summary}
 
 Items (id | date | call | type | who | text | quote):
 ${items.map(i => `${i.id} | ${i.date} | ${i.call} | ${i.type} | ${i.who} | ${i.text} | "${i.quote}"`).join('\n')}`
+}
+
+export function suggestPrompt({ library, tree, items }) {
+  return `Business: ${library.name}
+
+The business tree:
+${outline(tree)}
+The items below are where filing struggles: the two readers split on them, or they fit nowhere. Propose the branches that are missing, so each of these has a clear home.
+For each new branch: "name" (2 to 5 words), "parent" (the tree id it goes under, or "" for top level), "desc" (one line on what belongs there, so filing can tell it apart from its neighbours), "why" (what keeps landing in the wrong place now), "items" (the ids that belong there).
+Only branches that at least 3 items need. Prefer a few clear branches over many thin ones. Don't propose one that already exists under another name.
+
+Items (id | filed at now | text):
+${items.map(i => `${i.id} | ${i.where} | ${i.text}`).join('\n')}`
 }

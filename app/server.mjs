@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, mkdirSync, statSync } from "node:fs";
-import { join, extname, basename, dirname } from "node:path";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, mkdirSync, statSync, chmodSync } from "node:fs";
+import { join, extname, basename, delimiter, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EventEmitter } from "node:events";
 import { spawnSync, spawn } from "node:child_process";
@@ -4720,6 +4720,59 @@ function chunks(text, max = 48e3) {
   if (cur.trim()) out.push(cur);
   return out;
 }
+const BIN = join(homedir(), ".local", "bin");
+for (const dir of [BIN, ...process.platform === "darwin" ? ["/opt/homebrew/bin", "/usr/local/bin"] : []])
+  if (!process.env.PATH.split(delimiter).includes(dir)) process.env.PATH = [dir, process.env.PATH].join(delimiter);
+let cache = null;
+function aiStatus(fresh = false) {
+  if (cache && !fresh && Date.now() - cache.at < 6e4) return cache;
+  const r = spawnSync("claude", ["auth", "status"], { encoding: "utf8", timeout: 2e4 });
+  let loggedIn = false;
+  try {
+    loggedIn = !!JSON.parse(r.stdout).loggedIn;
+  } catch {
+  }
+  cache = { at: Date.now(), installed: !r.error, loggedIn };
+  return cache;
+}
+function connectAI() {
+  cache = null;
+  if (process.env.THINK_NO_TERMINAL) return { ok: true };
+  if (process.platform === "win32") {
+    const file = join(tmpdir(), "connect-your-ai.ps1");
+    writeFileSync(file, `$Host.UI.RawUI.WindowTitle = 'Connect your AI'
+Write-Host 'Connecting your AI (Claude). This takes a minute or two.' -ForegroundColor Cyan
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+  Write-Host 'Installing Git (Claude needs it)...'
+  winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements
+}
+if (-not (Test-Path "$env:USERPROFILE\\.local\\bin\\claude.exe")) {
+  Write-Host 'Installing Claude...'
+  irm https://claude.ai/install.ps1 | iex
+}
+Write-Host ''
+Write-Host 'Now sign in. A browser page opens; if it shows a code, paste it here.' -ForegroundColor Cyan
+& "$env:USERPROFILE\\.local\\bin\\claude.exe" auth login
+Write-Host ''
+Write-Host 'Done. Close this window and go back to the app.' -ForegroundColor Green
+`);
+    spawn("cmd.exe", ["/c", `start "" powershell -NoExit -ExecutionPolicy Bypass -File "${file}"`], { detached: true, stdio: "ignore", windowsVerbatimArguments: true }).unref();
+  } else {
+    const file = join(tmpdir(), "Connect your AI.command");
+    writeFileSync(file, `#!/bin/bash
+echo "Connecting your AI (Claude). This takes a minute."
+command -v claude >/dev/null || [ -x "$HOME/.local/bin/claude" ] || curl -fsSL https://claude.ai/install.sh | bash
+echo
+echo "Now sign in. A browser page opens; if it shows a code, paste it here."
+"$HOME/.local/bin/claude" auth login || claude auth login
+echo
+echo "Done. Close this window and go back to the app."
+`);
+    chmodSync(file, 493);
+    spawn("open", [file], { detached: true, stdio: "ignore" }).unref();
+  }
+  return { ok: true };
+}
 const str = { type: "string" };
 const num = { type: "number" };
 const arr = (items) => ({ type: "array", items });
@@ -4763,7 +4816,8 @@ const SCHEMAS = {
     summary: str,
     links: arr(obj({ from: str, to: str, idea: str, action: str, strength: oneOf("strong", "possible") }))
   }),
-  ask: obj({ answer: str, cites: arr(str), gaps: arr(str) })
+  ask: obj({ answer: str, cites: arr(str), gaps: arr(str) }),
+  suggest: obj({ categories: arr(obj({ name: str, parent: str, desc: str, why: str, items: arr(str) })) })
 };
 const SYSTEM = `You read a business's recorded conversations and turn them into a clean, traceable record.
 Rules:
@@ -4856,6 +4910,18 @@ ${threads.map((t) => `${t.id} [${t.status}] ${t.path}: ${t.title} — ${t.summar
 
 Items (id | date | call | type | who | text | quote):
 ${items.map((i) => `${i.id} | ${i.date} | ${i.call} | ${i.type} | ${i.who} | ${i.text} | "${i.quote}"`).join("\n")}`;
+}
+function suggestPrompt({ library, tree, items }) {
+  return `Business: ${library.name}
+
+The business tree:
+${outline(tree)}
+The items below are where filing struggles: the two readers split on them, or they fit nowhere. Propose the branches that are missing, so each of these has a clear home.
+For each new branch: "name" (2 to 5 words), "parent" (the tree id it goes under, or "" for top level), "desc" (one line on what belongs there, so filing can tell it apart from its neighbours), "why" (what keeps landing in the wrong place now), "items" (the ids that belong there).
+Only branches that at least 3 items need. Prefer a few clear branches over many thin ones. Don't propose one that already exists under another name.
+
+Items (id | filed at now | text):
+${items.map((i) => `${i.id} | ${i.where} | ${i.text}`).join("\n")}`;
 }
 const STATUS = { unsettled: "Talked about, never settled", open: "Open", assumed: "Assumed, never confirmed", decided: "Decided", done: "Done" };
 const ORDER = ["unsettled", "open", "assumed", "decided", "done"];
@@ -5236,6 +5302,8 @@ function view(id) {
     estimate: estimate(s, id),
     me: me(id),
     member: lib2.sync?.role === "member",
+    ai: lib2.sync?.role === "member" ? aiStatus() : { installed: true, loggedIn: true },
+    proposals: proposals(s, index),
     sync: lib2.sync ? { repo: lib2.sync.repo, role: lib2.sync.role, last: s.syncState?.last, error: s.syncState?.error, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
     log: (s.log || []).slice(-300).reverse(),
     pending: s.corrections.filter((c) => c.at > (s.refreshedAt || "")).length + (s.treeChangedAt > (s.refreshedAt || "") ? 1 : 0)
@@ -5281,7 +5349,7 @@ const topicModel = (id) => resolveModel(LIBS.get(id).topicModel || "claude-sonne
 const READ_PER_K = { "claude-haiku-5-5": 7e-4, "claude-sonnet-5-5": 37e-4, "claude-opus-5-5": 0.0185 };
 function estimate(s, id) {
   const calls = Object.values(s.calls).filter((c) => c.status === "new");
-  const chars = calls.reduce((a, c) => a + c.chars, 0);
+  const chars = calls.filter((c) => !preRead(id, c)).reduce((a, c) => a + c.chars, 0);
   return { calls: calls.length, usd: Math.round((chars / 1e3 * (READ_PER_K[readModel(id)] ?? 37e-4) + calls.length * 0.05) * 100) / 100 };
 }
 function processLibrary(id, { model, only } = {}) {
@@ -5321,6 +5389,8 @@ async function pipeline(id, model, only) {
   const s = load(id), lib2 = LIBS.get(id);
   const todo = Object.values(s.calls).filter((c) => (c.status === "new" || c.status === "error" && c.hash) && (!only || c.file.includes(only)));
   const parts = todo.flatMap((c) => {
+    const pre = preRead(id, c);
+    if (pre) return [{ call: c, part: 1, parts: 1, pre }];
     const text = parseFile(join(c.dir, c.file), lib2.names).text;
     const cs = chunks(text);
     return cs.map((t, i) => ({ call: c, part: i + 1, parts: cs.length, text: t }));
@@ -5334,13 +5404,14 @@ async function pipeline(id, model, only) {
   await pool(parts, CONCURRENCY, async (p) => {
     if (s.job.stop) return;
     try {
-      const res = await callModel({
+      const res = p.pre ? { out: { items: p.pre.items, summary: p.pre.summary, title: p.pre.title }, cost: 0 } : await callModel({
         model,
         system: SYSTEM,
         kind: "extract",
         schema: SCHEMAS.extract,
         prompt: extractPrompt({ library: lib2, call: p.call, part: p.part, parts: p.parts, text: p.text, tree: s.tree.branches, glossary: glossary(s) })
       });
+      if (p.pre) p.call.readBy = p.pre.by;
       s.cost += res.cost;
       const idx = index();
       for (const it of res.out.items) {
@@ -5370,7 +5441,7 @@ async function pipeline(id, model, only) {
       done.set(p.call.id, (done.get(p.call.id) || 0) + 1);
       if (done.get(p.call.id) === p.parts) p.call.status = "done";
       s.job.done++;
-      note(id, `${p.call.title}${p.parts > 1 ? ` (${p.part}/${p.parts})` : ""}: ${res.out.items.length} items`);
+      note(id, `${p.call.title}${p.parts > 1 ? ` (${p.part}/${p.parts})` : ""}: ${res.out.items.length} items${p.pre ? ` (read by ${p.pre.by})` : ""}`);
     } catch (e) {
       p.call.status = "error";
       p.call.error = String(e.message || e).slice(0, 300);
@@ -5680,6 +5751,74 @@ function sharpen(id, key, { merge, describe }) {
   save(id);
   return { ok: true };
 }
+function preRead(id, c) {
+  const f = join(LIBS.get(id).dir, "reads", c.file + ".json");
+  try {
+    return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
+  } catch {
+    return null;
+  }
+}
+async function readUpload(id, path, name) {
+  const s = load(id), lib2 = LIBS.get(id);
+  const model = readModel(id);
+  const c = parseFile(path, lib2.names);
+  const call = { title: c.title, date: c.date, speakers: c.speakers };
+  const parts = chunks(c.text);
+  s.job = { running: true, stage: `Reading ${name} with your AI`, done: 0, total: parts.length, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model };
+  save(id);
+  const read2 = { file: name, title: "", summary: "", items: [], cost: 0, by: me(id), at: (/* @__PURE__ */ new Date()).toISOString(), model };
+  try {
+    for (const [k, text] of parts.entries()) {
+      const res = await callModel({ model, system: SYSTEM, kind: "extract", schema: SCHEMAS.extract, prompt: extractPrompt({ library: lib2, call, part: k + 1, parts: parts.length, text, tree: s.tree.branches, glossary: glossary(s) }) });
+      read2.items.push(...res.out.items);
+      read2.summary = [read2.summary, res.out.summary].filter(Boolean).join(" ");
+      read2.title ||= res.out.title;
+      read2.cost += res.cost;
+      s.job.done++;
+    }
+    const dir = join(lib2.dir, "outreads");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, name + ".json"), JSON.stringify(read2));
+    (s.outreads ||= []).push({ name, path: join(dir, name + ".json") });
+    note(id, `${name}: ${read2.items.length} items, read with your AI. They show up for everyone after the next update.`);
+  } catch (e) {
+    note(id, `${name}: could not read it with your AI (${String(e.message).slice(0, 120)}). It goes up unread.`);
+  } finally {
+    s.job.running = false;
+    s.job.stage = "Done";
+    save(id, true);
+    bus.emit("change", id);
+  }
+}
+function proposals(s, index) {
+  const gone = s.dismissed || {}, groups = {};
+  const add2 = (key, x, ids) => {
+    if (gone[key]) return;
+    const g = groups[key] ||= { key, ...x, items: [] };
+    g.items.push(...ids);
+  };
+  for (const i of Object.values(s.items)) {
+    const raw = i.new_branch?.trim();
+    if (!raw || i.dup || i.by === "owner" || index.has(raw)) continue;
+    const m = raw.match(/^([a-z0-9-]+(?:\.[a-z0-9-]+)*)\.([a-z0-9-]+)(?::\s*(.+))?$/i);
+    const parent = m && index.has(m[1]) ? m[1] : scopeOf(index, i.branch) === "none" ? "" : scopeOf(index, i.branch);
+    let name = (m && index.has(m[1]) ? m[3] || m[2].replace(/-/g, " ") : raw.replace(/^[a-z0-9.-]+:\s*/i, "")).trim();
+    name = name.charAt(0).toUpperCase() + name.slice(1);
+    add2(`${parent}|${name.toLowerCase()}`, { name, parent, from: "reading" }, [i.id]);
+  }
+  for (const p of s.proposals || []) add2(`${p.parent}|${p.name.toLowerCase()}`, { name: p.name, parent: p.parent, desc: p.desc, why: p.why, from: "ai" }, p.items.filter((x) => s.items[x]));
+  const exists = (parent, name) => [...index.values()].some((n) => (n.parent || "") === parent && n.name.toLowerCase() === name.toLowerCase());
+  return Object.values(groups).filter((g) => !exists(g.parent, g.name)).map((g) => ({ ...g, items: [...new Set(g.items)], where: g.parent ? pathName(index, g.parent) : "Top level" })).sort((a, b) => b.items.length - a.items.length);
+}
+async function suggestCategories(id) {
+  const s = load(id), lib2 = LIBS.get(id), index = flat(s.tree.branches);
+  const pick2 = Object.values(s.items).filter((i) => !i.dup && i.by !== "owner" && (["split", "shared", "none"].includes(i.rule) || i.new_branch)).sort((a, b) => hash(a.id) - hash(b.id)).slice(0, 300);
+  const res = await callModel({ model: topicModel(id), system: SYSTEM, kind: "suggest", schema: SCHEMAS.suggest, prompt: suggestPrompt({ library: lib2, tree: s.tree.branches, items: pick2.map((i) => ({ id: i.id, where: pathName(index, i.branch), text: i.text })) }) });
+  s.cost += res.cost;
+  const list2 = res.out.categories.filter((c) => c.name?.trim() && (!c.parent || index.has(c.parent))).map((c) => ({ ...c, items: c.items.filter((x) => s.items[x]) }));
+  return change(id, { kind: "proposals", list: list2 });
+}
 let clock = null, actor = null;
 const now = () => clock || (/* @__PURE__ */ new Date()).toISOString();
 const me = (id) => LIBS.get(id)?.sync?.me || "owner";
@@ -5759,13 +5898,35 @@ const APPLY = {
     const slug = op.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
     const bid = parent ? `${parent.id}.${slug}` : slug;
     if (!flat(s.tree.branches).has(bid)) (parent ? parent.children ||= [] : s.tree.branches).push({ id: bid, name: op.name.trim(), desc: op.desc || "", from: op.by, added: op.at.slice(0, 10) });
-    Object.assign(e, { what: `Added branch: ${pathName(flat(s.tree.branches), bid)}`, after: op.desc || "" });
+    const index = flat(s.tree.branches);
+    for (const x of op.items || []) {
+      const i = s.items[x];
+      if (i && i.by !== "owner") {
+        Object.assign(i, { claudeBranch: bid, guess: bid, guessConf: 1 });
+        settle(i, index);
+      }
+    }
+    if (op.key) (s.dismissed ||= {})[op.key] = op.at;
+    Object.assign(e, { what: `Added branch: ${pathName(index, bid)}${op.items?.length ? ` (${op.items.length} items moved in)` : ""}`, after: op.desc || "" });
     s.treeChangedAt = op.at;
     save(id);
     return { ok: true, id: bid };
   },
   transcript(s, op, e) {
-    e.what = `Added call: ${op.file}`;
+    e.what = `Added transcript: ${op.file}`;
+    return { ok: true };
+  },
+  proposals(s, op, e, id) {
+    s.proposals = op.list;
+    e.what = `Suggested ${op.list.length} new categories`;
+    e.after = op.list.map((c) => c.name).join(", ");
+    save(id);
+    return { ok: true, count: op.list.length };
+  },
+  dismissProposal(s, op, e, id) {
+    (s.dismissed ||= {})[op.key] = op.at;
+    e.what = `Dismissed proposed category: ${op.name}`;
+    save(id);
     return { ok: true };
   }
 };
@@ -5780,10 +5941,10 @@ function applyRemote(id, ops) {
 }
 function replaceBase(id, record, tree) {
   const old = load(id);
-  const keep = { snoozed: old.snoozed, outbox: old.outbox || [], outfiles: old.outfiles || [], claims: old.claims || {}, syncState: old.syncState };
+  const keep = { snoozed: old.snoozed, outbox: old.outbox || [], outfiles: old.outfiles || [], outreads: old.outreads || [], claims: old.claims || {}, syncState: old.syncState, job: old.job?.running ? old.job : null };
   states.delete(id);
   const s = load(id);
-  Object.assign(s, { calls: {}, items: {}, threads: {}, answers: [], corrections: [], crosslinks: [], resolvedPairs: {}, log: [] }, record, keep, { tree, job: null });
+  Object.assign(s, { calls: {}, items: {}, threads: {}, answers: [], corrections: [], crosslinks: [], resolvedPairs: {}, log: [] }, record, { tree, job: null }, keep);
   s.version = old.version + 1;
   save(id, true);
 }
@@ -5961,19 +6122,31 @@ async function sync(id, { push = true } = {}) {
     }).filter(Boolean));
     const applied = applyRemote(id, [...ops, ...load(id).outbox || []]);
     if (applied) dirty = true;
+    const fresh = [];
     if (lib2.sync.role === "reader") {
       const dir = lib2.sources.find((x) => existsSync(x) && !extname(x));
+      mkdirSync(join(lib2.dir, "reads"), { recursive: true });
       for (const [path, sha] of Object.entries(r.files)) {
+        if (path.startsWith("data/reads/") && seen[path] !== sha) {
+          writeFileSync(join(lib2.dir, "reads", path.slice("data/reads/".length)), await blob(lib2, sha));
+          seen[path] = sha;
+        }
         const name = path.slice("data/Transcripts/".length);
         if (!path.startsWith("data/Transcripts/") || name.includes("/") || existsSync(join(dir, name))) continue;
         writeFileSync(join(dir, name), await blob(lib2, sha));
         dirty = true;
+        fresh.push(name);
       }
     }
     const state = load(id);
     state.syncState = { ...state.syncState, seen };
     if (push) await send(id, lib2, r);
     state.syncState = { ...state.syncState, last: (/* @__PURE__ */ new Date()).toISOString(), error: "" };
+    if (fresh.length) {
+      scan(id);
+      const waiting = Object.values(load(id).calls).filter((c) => c.status === "new");
+      if (waiting.length && waiting.every((c) => preRead(id, c))) processLibrary(id);
+    }
   } catch (e) {
     load(id).syncState = { ...load(id).syncState, error: e.message.slice(0, 200) };
   } finally {
@@ -5990,6 +6163,8 @@ async function send(id, lib2, r) {
   const log2 = Buffer.from((existsSync(mine) ? readFileSync(mine, "utf8") : "") + (s.outbox || []).map((o) => JSON.stringify(o) + "\n").join(""));
   if (log2.length) files[`data/changes/${me2}.jsonl`] = log2;
   for (const f of s.outfiles || []) if (existsSync(f.path)) files[`data/Transcripts/${f.name}`] = readFileSync(f.path);
+  const reads = (s.outreads || []).length;
+  for (const f of s.outreads || []) if (existsSync(f.path)) files[`data/reads/${f.name}.json`] = readFileSync(f.path);
   if (lib2.sync.role === "reader") {
     for (const f of RECORD) files[`data/record/${f}`] = readFileSync(join(lib2.dir, f));
     const dir = lib2.sources.find((x) => existsSync(x) && !extname(x));
@@ -6017,6 +6192,7 @@ async function send(id, lib2, r) {
   if (log2.length) writeFileSync(mine, log2);
   s.outbox = (s.outbox || []).slice(sent);
   s.outfiles = (s.outfiles || []).slice(calls);
+  s.outreads = (s.outreads || []).slice(reads);
 }
 function addTranscript(id, name, base64) {
   const lib2 = getLibrary(id), s = load(id);
@@ -6025,8 +6201,10 @@ function addTranscript(id, name, base64) {
   mkdirSync(dir, { recursive: true });
   const path = join(dir, name.replace(/[\\/:*?"<>|]/g, "-"));
   writeFileSync(path, Buffer.from(base64, "base64"));
-  (s.outfiles ||= []).push({ name: path.split(/[\\/]/).at(-1), path });
+  const file = path.split(/[\\/]/).at(-1);
+  (s.outfiles ||= []).push({ name: file, path });
   save(id);
+  if (lib2.sync?.role === "member" && aiStatus().loggedIn) readUpload(id, path, file);
 }
 function startSync(ids) {
   for (const id of ids) {
@@ -6104,6 +6282,9 @@ const LIBRARY_ACTIONS = {
     return change(id, { kind: "transcript", file: (b.files || []).map((f) => f.name).join(", ") });
   },
   sync: (id) => sync(id),
+  connect: () => connectAI(),
+  aicheck: () => aiStatus(true),
+  suggest: (id) => suggestCategories(id),
   ask: (id, b) => ask(id, b.question, b)
 };
 function sse(req, res, run2) {

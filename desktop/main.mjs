@@ -20,8 +20,7 @@ app.on('window-all-closed', () => app.quit())
 
 // ---------- small pages shown before the record opens ----------
 const page = (title, body) => 'data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
-  :root { color-scheme: light dark; --bg:#f4f5f7; --ink:#0e1014; --sub:#626877; --card:#fff; --accent:#3050f0 }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0b0c0f; --ink:#edeef1; --sub:#959ba7; --card:#15171c; --accent:#8299ff } }
+  :root { color-scheme: dark; --bg:#0b0c0f; --ink:#edeef1; --sub:#959ba7; --card:#15171c; --accent:#8299ff }
   body { margin:0; height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif }
   main { background:var(--card); padding:40px 48px; border-radius:16px; max-width:440px; text-align:center; box-shadow:0 20px 60px -20px rgba(0,0,0,.3) }
   h1 { font-size:22px; margin:0 0 8px } p { color:var(--sub); margin:8px 0 }
@@ -125,7 +124,7 @@ app.whenReady().then(() => {
     { role: 'editMenu' },
     { label: 'View', submenu: [{ role: 'reload' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'resetZoom' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
   ]))
-  win = new BrowserWindow({ width: 1400, height: 900, title: TEAM.name, backgroundColor: '#f4f5f7', autoHideMenuBar: true })
+  win = new BrowserWindow({ width: 1400, height: 900, title: TEAM.name, backgroundColor: '#0b0c0f', autoHideMenuBar: true })
   wire()
   ;(readerConfig() ? startReader : start)().catch(e => { actions.retry = () => start().catch(() => {}); show('Problem', `<h1>Something went wrong</h1><p>${String(e.message || e).replace(/</g, '&lt;')}</p><a class="btn" href="app:retry">Try again</a>`) })
 })

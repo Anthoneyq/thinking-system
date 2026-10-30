@@ -10,7 +10,8 @@ import { callModel, resolveModel } from '../models.js'
 import { config } from '../store.js'
 import { JEV_AVAILABLE, jevAsk } from '../jev.js'
 import { parseFile, chunks, KINDS } from './parse.js'
-import { SCHEMAS, SYSTEM, extractPrompt, linksPrompt, threadsPrompt, crosscheckPrompt, askPrompt } from './prompts.js'
+import { aiStatus } from '../ai.js'
+import { SCHEMAS, SYSTEM, extractPrompt, linksPrompt, threadsPrompt, crosscheckPrompt, askPrompt, suggestPrompt } from './prompts.js'
 import { writeMarkdown } from './export.js'
 
 export const bus = new EventEmitter()
@@ -243,7 +244,8 @@ export function view(id) {
     tree: s.tree, byBranch, counts: counts(s), calls: Object.values(s.calls).sort((a, b) => b.date.localeCompare(a.date)),
     items: s.items, threads: s.threads, crosslinks: s.crosslinks, answers: s.answers.slice(-50), questions: qs,
     job: s.job, version: s.version, estimate: estimate(s, id),
-    me: me(id), member: lib.sync?.role === 'member', sync: lib.sync ? { repo: lib.sync.repo, role: lib.sync.role, last: s.syncState?.last, error: s.syncState?.error, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
+    me: me(id), member: lib.sync?.role === 'member', ai: lib.sync?.role === 'member' ? aiStatus() : { installed: true, loggedIn: true },
+    proposals: proposals(s, index), sync: lib.sync ? { repo: lib.sync.repo, role: lib.sync.role, last: s.syncState?.last, error: s.syncState?.error, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
     log: (s.log || []).slice(-300).reverse(),
     pending: s.corrections.filter(c => c.at > (s.refreshedAt || '')).length + (s.treeChangedAt > (s.refreshedAt || '') ? 1 : 0),
   }
@@ -286,7 +288,7 @@ const topicModel = id => resolveModel(LIBS.get(id).topicModel || 'claude-sonnet-
 const READ_PER_K = { 'claude-haiku-5-5': 0.0007, 'claude-sonnet-5-5': 0.0037, 'claude-opus-5-5': 0.0185 }
 function estimate(s, id) {
   const calls = Object.values(s.calls).filter(c => c.status === 'new')
-  const chars = calls.reduce((a, c) => a + c.chars, 0)
+  const chars = calls.filter(c => !preRead(id, c)).reduce((a, c) => a + c.chars, 0)
   return { calls: calls.length, usd: Math.round((chars / 1000 * (READ_PER_K[readModel(id)] ?? 0.0037) + calls.length * 0.05) * 100) / 100 }
 }
 
@@ -320,6 +322,9 @@ async function pipeline(id, model, only) {
   const s = load(id), lib = LIBS.get(id)
   const todo = Object.values(s.calls).filter(c => (c.status === 'new' || c.status === 'error' && c.hash) && (!only || c.file.includes(only)))
   const parts = todo.flatMap(c => {
+    // A teammate already read it with their own AI: take their reading, no model call here.
+    const pre = preRead(id, c)
+    if (pre) return [{ call: c, part: 1, parts: 1, pre }]
     const text = parseFile(join(c.dir, c.file), lib.names).text
     const cs = chunks(text)
     return cs.map((t, i) => ({ call: c, part: i + 1, parts: cs.length, text: t }))
@@ -333,10 +338,11 @@ async function pipeline(id, model, only) {
   await pool(parts, CONCURRENCY, async p => {
     if (s.job.stop) return
     try {
-      const res = await callModel({
+      const res = p.pre ? { out: { items: p.pre.items, summary: p.pre.summary, title: p.pre.title }, cost: 0 } : await callModel({
         model, system: SYSTEM, kind: 'extract', schema: SCHEMAS.extract,
         prompt: extractPrompt({ library: lib, call: p.call, part: p.part, parts: p.parts, text: p.text, tree: s.tree.branches, glossary: glossary(s) }),
       })
+      if (p.pre) p.call.readBy = p.pre.by
       s.cost += res.cost
       const idx = index()
       for (const it of res.out.items) {
@@ -356,7 +362,7 @@ async function pipeline(id, model, only) {
       done.set(p.call.id, (done.get(p.call.id) || 0) + 1)
       if (done.get(p.call.id) === p.parts) p.call.status = 'done'
       s.job.done++
-      note(id, `${p.call.title}${p.parts > 1 ? ` (${p.part}/${p.parts})` : ''}: ${res.out.items.length} items`)
+      note(id, `${p.call.title}${p.parts > 1 ? ` (${p.part}/${p.parts})` : ''}: ${res.out.items.length} items${p.pre ? ` (read by ${p.pre.by})` : ''}`)
     } catch (e) {
       p.call.status = 'error'; p.call.error = String(e.message || e).slice(0, 300)
       s.job.done++
@@ -647,6 +653,73 @@ function sharpen(id, key, { merge, describe }) {
   return { ok: true }
 }
 
+// ---------- teammates read what they add, with their own AI ----------
+// The reading travels with the transcript (data/reads/<file>.json); the reader takes it instead of reading again.
+export function preRead(id, c) {
+  const f = join(LIBS.get(id).dir, 'reads', c.file + '.json')
+  try { return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null } catch { return null }
+}
+export async function readUpload(id, path, name) {
+  const s = load(id), lib = LIBS.get(id)
+  const model = readModel(id)
+  const c = parseFile(path, lib.names)
+  const call = { title: c.title, date: c.date, speakers: c.speakers }
+  const parts = chunks(c.text)
+  s.job = { running: true, stage: `Reading ${name} with your AI`, done: 0, total: parts.length, started: new Date().toISOString(), log: [], model }
+  save(id)
+  const read = { file: name, title: '', summary: '', items: [], cost: 0, by: me(id), at: new Date().toISOString(), model }
+  try {
+    for (const [k, text] of parts.entries()) {
+      const res = await callModel({ model, system: SYSTEM, kind: 'extract', schema: SCHEMAS.extract, prompt: extractPrompt({ library: lib, call, part: k + 1, parts: parts.length, text, tree: s.tree.branches, glossary: glossary(s) }) })
+      read.items.push(...res.out.items)
+      read.summary = [read.summary, res.out.summary].filter(Boolean).join(' ')
+      read.title ||= res.out.title
+      read.cost += res.cost
+      s.job.done++
+    }
+    const dir = join(lib.dir, 'outreads')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, name + '.json'), JSON.stringify(read))
+    ;(s.outreads ||= []).push({ name, path: join(dir, name + '.json') })
+    note(id, `${name}: ${read.items.length} items, read with your AI. They show up for everyone after the next update.`)
+  } catch (e) {
+    note(id, `${name}: could not read it with your AI (${String(e.message).slice(0, 120)}). It goes up unread.`)
+  } finally {
+    s.job.running = false; s.job.stage = 'Done'; save(id, true); bus.emit('change', id)
+  }
+}
+
+// ---------- categories: what the readers say is missing from the tree ----------
+// When nothing fits, the reader names the branch that should exist; the same name from several items is a proposal.
+function proposals(s, index) {
+  const gone = s.dismissed || {}, groups = {}
+  const add = (key, x, ids) => { if (gone[key]) return; const g = (groups[key] ||= { key, ...x, items: [] }); g.items.push(...ids) }
+  for (const i of Object.values(s.items)) {
+    const raw = i.new_branch?.trim()
+    if (!raw || i.dup || i.by === 'owner' || index.has(raw)) continue
+    const m = raw.match(/^([a-z0-9-]+(?:\.[a-z0-9-]+)*)\.([a-z0-9-]+)(?::\s*(.+))?$/i)
+    const parent = m && index.has(m[1]) ? m[1] : scopeOf(index, i.branch) === 'none' ? '' : scopeOf(index, i.branch)
+    let name = (m && index.has(m[1]) ? m[3] || m[2].replace(/-/g, ' ') : raw.replace(/^[a-z0-9.-]+:\s*/i, '')).trim()
+    name = name.charAt(0).toUpperCase() + name.slice(1)
+    add(`${parent}|${name.toLowerCase()}`, { name, parent, from: 'reading' }, [i.id])
+  }
+  for (const p of s.proposals || []) add(`${p.parent}|${p.name.toLowerCase()}`, { name: p.name, parent: p.parent, desc: p.desc, why: p.why, from: 'ai' }, p.items.filter(x => s.items[x]))
+  const exists = (parent, name) => [...index.values()].some(n => (n.parent || '') === parent && n.name.toLowerCase() === name.toLowerCase())
+  return Object.values(groups).filter(g => !exists(g.parent, g.name)).map(g => ({ ...g, items: [...new Set(g.items)], where: g.parent ? pathName(index, g.parent) : 'Top level' }))
+    .sort((a, b) => b.items.length - a.items.length)
+}
+
+// Ask the AI which branches are missing, from the items the two readers keep splitting on or that fit nowhere.
+export async function suggestCategories(id) {
+  const s = load(id), lib = LIBS.get(id), index = flat(s.tree.branches)
+  const pick = Object.values(s.items).filter(i => !i.dup && i.by !== 'owner' && (['split', 'shared', 'none'].includes(i.rule) || i.new_branch))
+    .sort((a, b) => hash(a.id) - hash(b.id)).slice(0, 300)
+  const res = await callModel({ model: topicModel(id), system: SYSTEM, kind: 'suggest', schema: SCHEMAS.suggest, prompt: suggestPrompt({ library: lib, tree: s.tree.branches, items: pick.map(i => ({ id: i.id, where: pathName(index, i.branch), text: i.text })) }) })
+  s.cost += res.cost
+  const list = res.out.categories.filter(c => c.name?.trim() && (!c.parent || index.has(c.parent))).map(c => ({ ...c, items: c.items.filter(x => s.items[x]) }))
+  return change(id, { kind: 'proposals', list })
+}
+
 // ---------- changes: every edit is a change with who, when and what it was before, so a team can share one record ----------
 // Each person's changes go to their own log (data/changes/<who>.jsonl in the shared repo), so two people never write
 // the same file. Applying a change is deterministic, so any copy can replay everyone's changes on the last shared record.
@@ -713,11 +786,17 @@ const APPLY = {
     const slug = op.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24)
     const bid = parent ? `${parent.id}.${slug}` : slug
     if (!flat(s.tree.branches).has(bid)) (parent ? (parent.children ||= []) : s.tree.branches).push({ id: bid, name: op.name.trim(), desc: op.desc || '', from: op.by, added: op.at.slice(0, 10) })
-    Object.assign(e, { what: `Added branch: ${pathName(flat(s.tree.branches), bid)}`, after: op.desc || '' })
+    const index = flat(s.tree.branches)
+    // From a proposal: its items move to the new branch as best guesses, until spot checks say otherwise.
+    for (const x of op.items || []) { const i = s.items[x]; if (i && i.by !== 'owner') { Object.assign(i, { claudeBranch: bid, guess: bid, guessConf: 1 }); settle(i, index) } }
+    if (op.key) (s.dismissed ||= {})[op.key] = op.at
+    Object.assign(e, { what: `Added branch: ${pathName(index, bid)}${op.items?.length ? ` (${op.items.length} items moved in)` : ''}`, after: op.desc || '' })
     s.treeChangedAt = op.at
     save(id); return { ok: true, id: bid }
   },
-  transcript(s, op, e) { e.what = `Added call: ${op.file}`; return { ok: true } },
+  transcript(s, op, e) { e.what = `Added transcript: ${op.file}`; return { ok: true } },
+  proposals(s, op, e, id) { s.proposals = op.list; e.what = `Suggested ${op.list.length} new categories`; e.after = op.list.map(c => c.name).join(', '); save(id); return { ok: true, count: op.list.length } },
+  dismissProposal(s, op, e, id) { (s.dismissed ||= {})[op.key] = op.at; e.what = `Dismissed proposed category: ${op.name}`; save(id); return { ok: true } },
 }
 const STATUS_WORD = { unsettled: 'Never settled', open: 'Open', assumed: 'Assumed', decided: 'Decided', done: 'Done' }
 
@@ -734,10 +813,10 @@ export function applyRemote(id, ops) {
 // A newer shared record arrived: it replaces this copy, keeping what is only yours (skips, unsent changes).
 export function replaceBase(id, record, tree) {
   const old = load(id)
-  const keep = { snoozed: old.snoozed, outbox: old.outbox || [], outfiles: old.outfiles || [], claims: old.claims || {}, syncState: old.syncState }
+  const keep = { snoozed: old.snoozed, outbox: old.outbox || [], outfiles: old.outfiles || [], outreads: old.outreads || [], claims: old.claims || {}, syncState: old.syncState, job: old.job?.running ? old.job : null }
   states.delete(id)
   const s = load(id)
-  Object.assign(s, { calls: {}, items: {}, threads: {}, answers: [], corrections: [], crosslinks: [], resolvedPairs: {}, log: [] }, record, keep, { tree, job: null })
+  Object.assign(s, { calls: {}, items: {}, threads: {}, answers: [], corrections: [], crosslinks: [], resolvedPairs: {}, log: [] }, record, { tree, job: null }, keep)
   s.version = old.version + 1
   save(id, true)
 }

@@ -11,6 +11,7 @@ import { layout } from '../shared/layout.js'
 import { writeRunFile, RUNS_DIR, RULES_FILE, readRules, addRule } from './store.js'
 import * as library from './library/library.js'
 import * as sync from './library/sync.js'
+import { aiStatus, connectAI } from './ai.js'
 
 const PORT = Number(process.env.THINK_PORT || 4477)
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -51,6 +52,9 @@ const LIBRARY_ACTIONS = {
   change: (id, b) => library.change(id, b),
   upload: (id, b) => { for (const f of b.files || []) sync.addTranscript(id, f.name, f.data); return library.change(id, { kind: 'transcript', file: (b.files || []).map(f => f.name).join(', ') }) },
   sync: id => sync.sync(id),
+  connect: () => connectAI(),
+  aicheck: () => aiStatus(true),
+  suggest: id => library.suggestCategories(id),
   ask: (id, b) => library.ask(id, b.question, b),
 }
 
