@@ -575,7 +575,7 @@ Explain it in plain language a smart 12-year-old would follow ("plain"). Name wh
 }
 const config = (() => {
   try {
-    return JSON.parse(readFileSync(join(homedir(), ".thinking-system", "config.json"), "utf8"));
+    return JSON.parse(readFileSync(process.env.THINK_CONFIG || join(homedir(), ".thinking-system", "config.json"), "utf8"));
   } catch {
     return {};
   }
@@ -4735,10 +4735,12 @@ const SCHEMAS = {
       terms: arr(obj({ term: str, sense: str })),
       mixed: str,
       branch: str,
+      also: arr(str),
       confidence: num,
       new_branch: str
     }))
   }),
+  links: obj({ items: arr(obj({ id: str, also: arr(str) })) }),
   threads: obj({
     threads: arr(obj({
       id: str,
@@ -4790,11 +4792,22 @@ For each item:
 - "terms": the 1 to 4 subject words someone would search for, each with the sense meant here (e.g. {"term":"ceiling","sense":"cost cap on a budget"} vs {"term":"ceiling","sense":"part of the building"}).
 - "mixed": only if this item itself uses one word in two senses, so it could be filed in two places, say which ("ceiling: damage and price"); talking about the word itself does not count. Else "".
 - "branch": the tree id it belongs to, "none" if it fits nowhere; "confidence" 0 to 1 that the branch is right.
+- "also": other tree ids this item clearly also touches, because it is about both (a fee for website work touches pricing and the website). At most 3; [] when it sits in one place. Not branches you are merely unsure between.
 - "new_branch": if no branch fits well, a short name for the branch that should exist; else "".
 - "summary": two or three lines on what this ${parts > 1 ? "part of the " : ""}conversation covered.
 
 Transcript:
 ${text}`;
+}
+function linksPrompt({ library, tree, items }) {
+  return `Business: ${library.name}
+
+The business tree:
+${outline(tree)}
+Each item below already has a home branch. List the other branches it clearly also touches, because it is about both, so someone working in that branch should find it too (a fee for website work touches pricing and the website). At most 3, by id; [] when it sits in one place. Not branches you are merely unsure between. Return every item id.
+
+Items (id | home | text | context):
+${items.map((i) => `${i.id} | ${i.claudeBranch} | ${i.text} | ${i.context}`).join("\n")}`;
 }
 function threadsPrompt({ library, path, items, existing }) {
   return `Business: ${library.name}
@@ -4858,13 +4871,19 @@ function writeMarkdown(lib2, s, v) {
     `# ${lib2.name}: conversation index`,
     "",
     `Built by the Thinking System (Conversations mode). Open the live map: http://localhost:4477/library/${lib2.id}`,
-    `Updated ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace("T", " ")} UTC. ${c.calls} calls, ${c.items} items, ${c.filed} filed, ${c.review} to check, ${c.threads} topics (${c.open} not settled).`,
-    `Items file on their own at ${Math.round(v.fileAt * 100)}% confidence or higher; below that they wait for a person. Data: \`library.json\`, branches: \`tree.json\`.`,
+    `Updated ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace("T", " ")} UTC. ${c.calls} calls, ${c.items} items: ${c.filed} filed, ${c.guessed} best guesses, ${c.links} links between branches. ${c.threads} topics (${c.open} not settled).`,
+    `Every item has a home branch and may link to others it also touches. A home counts as filed when you confirmed it, or when the rule that placed it has been right at least ${Math.round(v.target * 100)}% of the time in your spot checks. Data: \`library.json\`, branches: \`tree.json\`.`,
+    "",
+    "## How sure the filing is",
+    "",
+    "| Rule | Items | Checked | Right | Files on its own |",
+    "|---|---|---|---|---|",
+    ...v.rules.map((r) => `| ${r.label} | ${r.items} | ${r.checked} of ${r.need} | ${r.right == null ? "-" : Math.round(r.right * 100) + "%"} | ${r.trusted ? "yes" : "not yet"} |`),
     "",
     "## Needs you",
     "",
     ...v.questions.slice(0, 25).map((q, k) => q.kind === "thread" ? `${k + 1}. **${q.q}** (${STATUS[q.status].toLowerCase()}, ${q.where})${q.ways?.length ? `
-   Ways it was talked about: ${q.ways.join(" / ")}` : ""}` : `${k + 1}. **Where does this belong?** "${q.q}" — best guess ${q.guessName} (${q.why}). From ${q.call ? s.calls[q.call]?.file : ""} ${q.at || ""}`),
+   Ways it was talked about: ${q.ways.join(" / ")}` : ""}` : q.kind === "spot" ? `${k + 1}. **Spot check: are these in the right place?** ${q.items.length} items, ${q.left} checks left. Answer in the app.` : q.kind === "tree" ? `${k + 1}. **${q.q}**` : `${k + 1}. **Where does this belong?** "${q.q}" — best guess ${q.guessName} (${q.why}). From ${q.call ? s.calls[q.call]?.file : ""} ${q.at || ""}`),
     v.questions.length > 25 ? `
 …and ${v.questions.length - 25} more in the app.` : "",
     ""
@@ -4874,12 +4893,33 @@ function writeMarkdown(lib2, s, v) {
     for (const l of s.crosslinks) out.push(`- **${l.fromName} → ${l.toName}** (${l.strength}): ${l.idea} First step: ${l.action}`);
     out.push("");
   }
+  const top = (id) => {
+    let n = index.get(id);
+    while (n?.parent && index.get(n.parent)?.parent) n = index.get(n.parent);
+    return n;
+  };
+  const pairs = {};
+  for (const i of Object.values(s.items)) for (const l of i.links || []) {
+    const a = top(i.branch), b = top(l);
+    if (!a || !b || a.id === b.id) continue;
+    const k = [a.id, b.id].sort().join("|");
+    (pairs[k] ||= []).push(i);
+  }
+  const strong = Object.entries(pairs).sort((x, y) => y[1].length - x[1].length).slice(0, 20);
+  if (strong.length) {
+    out.push("## How the parts connect", "", "Branch pairs that share the most items (two levels down), with an example of each.", "");
+    for (const [k, list2] of strong) {
+      const [a, b] = k.split("|");
+      out.push(`- **${path(a)}** ↔ **${path(b)}**: ${list2.length} items. e.g. ${list2[0].text}`);
+    }
+    out.push("");
+  }
   out.push("## By branch", "");
   const threads = Object.values(s.threads);
-  for (const top of s.tree.branches) {
-    const here = threads.filter((t) => t.branch === top.id || t.branch.startsWith(top.id + "."));
+  for (const top2 of s.tree.branches) {
+    const here = threads.filter((t) => t.branch === top2.id || t.branch.startsWith(top2.id + "."));
     if (!here.length) continue;
-    out.push(`### ${top.name}`, "");
+    out.push(`### ${top2.name}`, "");
     for (const st of ORDER) {
       const ts = here.filter((t) => t.status === st).sort((a, b) => (b.last || "").localeCompare(a.last || ""));
       if (!ts.length) continue;
@@ -4897,9 +4937,9 @@ function writeMarkdown(lib2, s, v) {
 }
 const bus = new EventEmitter();
 bus.setMaxListeners(100);
-const FILE_AT = 0.95;
-const CONCURRENCY = 3;
-const SONNET_IN = 3 / 1e6, SONNET_OUT = 15 / 1e6;
+const TARGET = 0.95;
+const MIN_CHECKS = 20, CHECK_EVERY = 50, SPOT = 10;
+const CONCURRENCY = 3, LINK_BATCH = 60;
 const LIBS = new Map((config.libraries || []).map((l) => [l.id, { ...l, sources: [].concat(l.sources || l.source || []) }]));
 const states = /* @__PURE__ */ new Map();
 const listLibraries = () => [...LIBS.values()].map((l) => ({ id: l.id, name: l.name, ...counts(load(l.id)) }));
@@ -4975,15 +5015,15 @@ function counts(s) {
     newCalls: Object.values(s.calls).filter((c) => !c.dupOf && c.status !== "done").length,
     items: items.length,
     filed: items.filter((i) => i.filed && i.branch !== "none").length,
-    review: items.filter(needsReview).length,
+    guessed: items.filter((i) => i.placed && !i.filed && i.branch !== "none").length,
+    links: items.reduce((a, i) => a + (i.links?.length || 0), 0),
     threads: Object.keys(s.threads).length,
     open: Object.values(s.threads).filter((t) => ["unsettled", "open", "assumed"].includes(t.status)).length,
     cost: s.cost
   };
 }
-const needsReview = (i) => !i.filed && i.placed && !i.offtopic;
-const home = (i) => i.by === "owner" ? i.branch : i.finer?.branch || i.branch;
-const threadable = (i) => i.placed && !i.offtopic && !i.dup && home(i) !== "none";
+const home = (i) => i.branch;
+const threadable = (i) => i.placed && !i.dup && i.branch !== "none";
 function questions(id) {
   const s = load(id), index = flat(s.tree.branches);
   const rank2 = { unsettled: 0, open: 2, assumed: 3 };
@@ -5002,38 +5042,15 @@ function questions(id) {
     order: rank2[t.status] - (t.weight ?? 0.5) - Math.min(t.items.length, 10) / 20,
     now: t.status === "unsettled" || (t.weight ?? 0.5) >= 0.8
   }));
-  const groups = {};
-  for (const i of Object.values(s.items)) {
-    if (needsReview(i) && !s.snoozed["i:" + i.id]) (groups["r:" + i.branch] ||= []).push(i);
-    else if (i.finer && i.by !== "owner" && !s.snoozed["f:" + i.id]) (groups["f:" + i.finer.branch] ||= []).push(i);
-  }
-  const fromItems = [];
-  for (const [key, list2] of Object.entries(groups)) {
-    const finer = key.startsWith("f:"), branch = key.slice(2);
-    if (list2.length === 1 && !finer) {
-      fromItems.push(placeQ(list2[0], index));
-      continue;
-    }
-    fromItems.push({
-      id: key,
-      kind: "group",
-      finer,
-      branch,
-      name: pathName(index, branch),
-      q: finer ? `${list2.length} item(s) filed under ${pathName(index, list2[0].branch)} look like they belong one level in, in ${pathName(index, branch)}.` : `${list2.length} items look like they belong in ${pathName(index, branch)}.`,
-      items: list2.sort((a, b) => (b.finer?.p ?? b.conf) - (a.finer?.p ?? a.conf)).map((i) => ({ id: i.id, text: i.text, conf: i.finer?.p ?? i.conf, why: finer ? "" : reviewWhy(i), file: i.file, at: i.at })),
-      order: finer ? 5 - list2.length / 100 : 1 - list2.length / 100,
-      now: !finer && list2.length >= 10
-    });
-  }
-  return [...fromThreads, ...fromItems, ...confusions(s, index)].sort((a, b) => a.order - b.order);
+  const fromItems = Object.values(s.items).filter((i) => i.rule === "mixed" && i.by !== "owner" && !i.dup && !s.snoozed["i:" + i.id]).map((i) => placeQ(i, index));
+  const check = spotCheck(s, index);
+  return [...fromThreads, ...check ? [check] : [], ...fromItems, ...confusions(s, index)].sort((a, b) => a.order - b.order);
 }
 function confusions(s, index) {
   const pairs = {};
   for (const i of Object.values(s.items)) {
-    if (!(needsReview(i) || i.finer) || i.by === "owner") continue;
-    const g = i.finer?.branch || i.branch;
-    const other = i.disagree ? i.claudeBranch : i.alts?.[0]?.p >= 0.15 ? i.alts[0].branch : null;
+    if (i.by === "owner" || !["split", "shared"].includes(i.rule)) continue;
+    const g = i.guess, other = i.claudeBranch;
     if (!other || other === "none" || g === "none" || !index.has(other) || !index.has(g) || within(index, g, other) || within(index, other, g)) continue;
     const key = [g, other].sort().join("|");
     (pairs[key] ||= []).push(i);
@@ -5072,19 +5089,114 @@ const placeQ = (i, index) => ({
   newBranch: i.new_branch,
   order: 1.5 + (1 - (i.conf || 0)) * 0.5
 });
-const reviewWhy = (i) => i.mixed ? `Uses a word two ways: ${i.mixed}` : i.disagree ? `Two readers disagree: Jev says one branch, Claude another` : `${Math.round((i.conf || 0) * 100)}% sure, under the ${Math.round(FILE_AT * 100)}% bar`;
+const reviewWhy = (i) => `Uses a word two ways: ${i.mixed}`;
+const RULES = {
+  same: "Jev and Claude picked the same branch, Jev 50% sure or more",
+  "same-low": "Jev and Claude picked the same branch, Jev under 50% sure",
+  nested: "One picked a part of the other's branch: filed at the part",
+  shared: "Same area, different parts: filed at the area",
+  linked: "Different branches, and Claude says it touches both: home at Claude's, linked to Jev's",
+  split: "Jev and Claude disagree: Claude's pick",
+  none: "Both say it is not about this business",
+  claude: "Claude alone (Jev was not available)"
+};
+const related = (index, a, b) => a === b || within(index, a, b) || within(index, b, a);
+const common = (index, a, b) => {
+  const pa = pathOf(index, a).map((n) => n.id);
+  return pathOf(index, b).map((n) => n.id).filter((x) => pa.includes(x)).at(-1) || null;
+};
+function settle(i, index) {
+  if (i.by === "owner") return;
+  const c = index.has(i.claudeBranch) ? i.claudeBranch : "none";
+  const j = i.by === "claude" ? null : index.has(i.guess) ? i.guess : "none";
+  const also = (i.also || []).filter((x) => index.has(x));
+  const both = j && j !== "none" && c !== "none";
+  let rule, branch;
+  if (i.mixed) [rule, branch] = ["mixed", c !== "none" ? c : j || "none"];
+  else if (!j) [rule, branch] = ["claude", c];
+  else if (j === "none" && c === "none") [rule, branch] = ["none", "none"];
+  else if (j === c) [rule, branch] = [i.guessConf >= 0.5 ? "same" : "same-low", c];
+  else if (both && related(index, j, c)) [rule, branch] = ["nested", index.get(j).depth >= index.get(c).depth ? j : c];
+  else if (both && common(index, j, c)) [rule, branch] = ["shared", common(index, j, c)];
+  else if (j !== "none" && also.some((a) => related(index, a, j))) [rule, branch] = ["linked", c];
+  else [rule, branch] = ["split", c !== "none" ? c : j];
+  const links = branch === "none" ? [] : [.../* @__PURE__ */ new Set([...also, ...rule === "linked" ? [j] : []])].filter((x) => !related(index, x, branch));
+  Object.assign(i, { rule, branch, links, placed: true });
+  delete i.finer;
+  delete i.disagree;
+}
+function ruleStats(s) {
+  const st = Object.fromEntries(Object.entries(RULES).map(([rule, label]) => [rule, { rule, label, items: 0, checked: 0, wrong: 0 }]));
+  for (const i of Object.values(s.items)) {
+    const x = !i.dup && i.placed && st[i.check?.rule || i.rule];
+    if (!x) continue;
+    x.items++;
+    if (i.check) {
+      x.checked++;
+      if (!i.check.ok) x.wrong++;
+    }
+  }
+  for (const x of Object.values(st)) {
+    x.need = Math.max(MIN_CHECKS, Math.ceil(x.items / CHECK_EVERY));
+    x.right = x.checked ? (x.checked - x.wrong) / x.checked : null;
+    x.trusted = x.checked >= MIN_CHECKS && x.right >= TARGET;
+  }
+  return st;
+}
+function applyTrust(s) {
+  const st = ruleStats(s);
+  for (const i of Object.values(s.items)) {
+    if (!i.placed || i.by === "owner") continue;
+    i.filed = i.branch !== "none" && !!st[i.rule]?.trusted;
+    i.offtopic = i.branch === "none" && !!st.none.trusted;
+  }
+}
+function resettle(s) {
+  const index = flat(s.tree.branches);
+  for (const i of Object.values(s.items)) if (i.placed) settle(i, index);
+  applyTrust(s);
+}
+const hash = (x) => {
+  let h = 2166136261;
+  for (const ch of x) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return h >>> 0;
+};
+function spotCheck(s, index) {
+  const st = ruleStats(s);
+  const pools = Object.values(st).filter((x) => x.checked < x.need).sort((a, b) => b.items - a.items).map((x) => ({
+    x,
+    list: Object.values(s.items).filter((i) => i.rule === x.rule && i.by !== "owner" && !i.dup && !s.snoozed["s:" + i.id]).sort((a, b) => hash(a.id) - hash(b.id)).slice(0, x.need - x.checked)
+  })).filter((p) => p.list.length);
+  if (!pools.length) return null;
+  const pick2 = [];
+  for (let k = 0; pick2.length < SPOT && pools.some((p) => p.list[k]); k++) for (const p of pools) if (p.list[k] && pick2.length < SPOT) pick2.push(p.list[k]);
+  const left = pools.reduce((a, p) => a + p.list.length, 0);
+  return {
+    id: "spot",
+    kind: "spot",
+    q: `Are these in the right place? ${left} check${left > 1 ? "s" : ""} left before filing can be trusted on its own.`,
+    items: pick2.map((i) => ({ id: i.id, text: i.text, context: i.context, file: i.file, at: i.at, branch: i.branch, where: pathName(index, i.branch), rule: i.rule, links: (i.links || []).map((l) => ({ id: l, name: pathName(index, l) })) })),
+    rules: Object.values(st).filter((x) => x.items),
+    left,
+    order: -5,
+    now: true
+  };
+}
 function view(id) {
   const s = load(id), lib2 = LIBS.get(id), index = flat(s.tree.branches);
   const byBranch = {};
   const bump = (bid, key) => {
     for (const p of pathOf(index, bid)) {
-      const b = byBranch[p.id] ||= { items: 0, need: 0, now: 0 };
+      const b = byBranch[p.id] ||= { items: 0, filed: 0, need: 0, now: 0 };
       b[key]++;
     }
   };
-  for (const i of Object.values(s.items)) if (i.filed && !i.dup && i.branch !== "none") bump(i.branch, "items");
+  for (const i of Object.values(s.items)) if (i.placed && !i.dup && i.branch !== "none") {
+    bump(i.branch, "items");
+    if (i.filed) bump(i.branch, "filed");
+  }
   const qs = questions(id);
-  for (const q of qs) for (const bid of q.kind === "thread" ? [s.threads[q.thread].branch] : q.kind === "tree" ? [q.a.id, q.b.id] : q.kind === "group" ? [q.branch] : [q.guess]) {
+  for (const q of qs) for (const bid of q.kind === "thread" ? [s.threads[q.thread].branch] : q.kind === "tree" ? [q.a.id, q.b.id] : q.kind === "place" ? [q.guess] : []) {
     bump(bid, "need");
     if (q.now) bump(bid, "now");
   }
@@ -5093,8 +5205,9 @@ function view(id) {
     name: lib2.name,
     dir: lib2.dir,
     sources: lib2.sources,
-    fileAt: FILE_AT,
+    target: TARGET,
     jev: JEV_AVAILABLE,
+    rules: Object.values(ruleStats(s)).filter((x) => x.items),
     tree: s.tree,
     byBranch,
     counts: counts(s),
@@ -5106,7 +5219,7 @@ function view(id) {
     questions: qs,
     job: s.job,
     version: s.version,
-    estimate: estimate(s),
+    estimate: estimate(s, id),
     pending: s.corrections.filter((c) => c.at > (s.refreshedAt || "")).length + (s.treeChangedAt > (s.refreshedAt || "") ? 1 : 0)
   };
 }
@@ -5145,17 +5258,18 @@ function scan(id) {
   save(id);
   return { added, ...counts(s) };
 }
-function estimate(s) {
+const readModel = (id) => resolveModel(LIBS.get(id).readModel || "claude-haiku-5-5");
+const topicModel = (id) => resolveModel(LIBS.get(id).topicModel || "claude-sonnet-5-5");
+const READ_PER_K = { "claude-haiku-5-5": 7e-4, "claude-sonnet-5-5": 37e-4, "claude-opus-5-5": 0.0185 };
+function estimate(s, id) {
   const calls = Object.values(s.calls).filter((c) => c.status === "new");
-  const tree = JSON.stringify(s.tree.branches).length / 3;
   const chars = calls.reduce((a, c) => a + c.chars, 0);
-  const tokens = chars / 4 + calls.length * tree / 4;
-  return { calls: calls.length, usd: Math.round((tokens * SONNET_IN + chars / 4 * 0.25 * SONNET_OUT + calls.length * 0.05) * 100) / 100 };
+  return { calls: calls.length, usd: Math.round((chars / 1e3 * (READ_PER_K[readModel(id)] ?? 37e-4) + calls.length * 0.05) * 100) / 100 };
 }
 function processLibrary(id, { model, only } = {}) {
   const s = load(id);
   if (s.job?.running) throw new Error("Already processing");
-  model = resolveModel(model || "claude-sonnet-5-5");
+  model = model ? resolveModel(model) : readModel(id);
   s.job = { running: true, stage: "Reading calls", done: 0, total: 0, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model };
   save(id);
   pipeline(id, model, only).catch((e) => note(id, `Stopped: ${e.message}`)).finally(() => {
@@ -5221,6 +5335,7 @@ async function pipeline(id, model, only) {
           part: p.part,
           ...p.call.note ? { note: true } : {},
           ...it,
+          also: it.also.filter((x) => idx.has(x) && x !== branch).slice(0, 3),
           claudeBranch: branch,
           claudeConf: it.confidence,
           branch,
@@ -5247,9 +5362,9 @@ async function pipeline(id, model, only) {
     for (const i of Object.values(s.items)) if (i.call === c.id) delete s.items[i.id];
   }
   await placeItems(id, fresh.filter((i) => s.items[i]));
-  await rebuildThreads(id, model, changedScopes(s, index()));
+  await rebuildThreads(id, topicModel(id), changedScopes(s, index()));
   await weighQuestions(id);
-  note(id, `Done: ${fresh.length} new items, ${counts(s).review} to check, ${counts(s).open} open threads. Spent $${s.cost.toFixed(2)} so far.`);
+  note(id, `Done: ${fresh.length} new items, ${counts(s).filed} filed, ${counts(s).guessed} best guesses, ${counts(s).open} open threads. Spent $${s.cost.toFixed(2)} so far.`);
 }
 function glossary(s) {
   const senses = {};
@@ -5267,10 +5382,11 @@ async function placeItems(id, ids) {
   const index = flat(s.tree.branches);
   if (!JEV_AVAILABLE) {
     for (const iid of ids) {
-      settle(s.items[iid], s.items[iid].claudeBranch, s.items[iid].claudeConf ?? 0, [], "claude", index);
-      s.items[iid].ctx = ctxKey(s);
+      Object.assign(s.items[iid], { by: "claude", ctx: ctxKey(s) });
+      settle(s.items[iid], index);
     }
-    note(id, "Filed with Claude's own confidence (no Jev key set)");
+    applyTrust(s);
+    note(id, "Placed by Claude alone (no Jev key set)");
     return save(id);
   }
   const per = {};
@@ -5331,25 +5447,45 @@ async function placeItems(id, ids) {
   walking.forEach(finish);
   const ctx = ctxKey(s);
   for (const iid of ids) if (s.items[iid]) s.items[iid].ctx = ctx;
+  applyTrust(s);
   function finish(w) {
     const i = s.items[w.iid];
-    if (w.fail) return settle(i, i.claudeBranch, i.claudeConf ?? 0, [], "claude", index);
-    settle(i, w.at || "none", w.p, w.alts.filter((a) => a.branch && a.branch !== "_root").sort((a, b) => b.p - a.p).slice(0, 3), "jev", index, w.path);
+    if (w.fail) {
+      i.by = "claude";
+      return settle(i, index);
+    }
+    let alts = w.alts.filter((a) => a.branch && a.branch !== "_root").sort((a, b) => b.p - a.p).slice(0, 3);
+    const c = i.claudeBranch;
+    if (c !== "none" && c !== w.at && !alts.some((a) => a.branch === c)) alts = [...alts, { branch: c, p: i.claudeConf ?? 0, by: "claude" }];
+    Object.assign(i, { guess: w.at || "none", guessConf: Math.round(w.p * 1e3) / 1e3, conf: Math.round(w.p * 1e3) / 1e3, alts, by: "jev" });
+    settle(i, index);
   }
   save(id);
 }
-function settle(i, guess, conf, alts, by, index, path = []) {
-  const c = i.claudeBranch;
-  const agree = by === "claude" || guess === c || guess !== "none" && c !== "none" && (within(index, guess, c) || within(index, c, guess));
-  if (c !== guess && !alts.some((a) => a.branch === c) && c !== "none") alts = [...alts, { branch: c, p: i.claudeConf ?? 0, by: "claude" }].slice(0, 4);
-  const clears = by === "jev" ? path.filter((x) => x.p >= FILE_AT).at(-1) : conf >= FILE_AT ? { id: guess, p: conf } : null;
-  const top = guess === "none" ? conf >= FILE_AT ? { id: "none", p: conf } : null : clears;
-  Object.assign(i, { guess, guessConf: Math.round(conf * 1e3) / 1e3, alts, by, placed: true, disagree: !agree });
-  i.offtopic = guess === "none" && conf >= FILE_AT && c === "none";
-  i.filed = !i.offtopic && !!top && agree && !i.mixed;
-  i.branch = i.filed ? top.id : guess;
-  i.conf = Math.round((i.filed ? top.p : conf) * 1e3) / 1e3;
-  i.finer = i.filed && top.id !== guess ? { branch: guess, p: i.guessConf } : null;
+async function linkItems(id, ids, model) {
+  const s = load(id), lib2 = LIBS.get(id);
+  if (!ids.length) return;
+  s.job.stage = `Finding what ${ids.length} item(s) also touch`;
+  const batches = [];
+  for (let b = 0; b < ids.length; b += LINK_BATCH) batches.push(ids.slice(b, b + LINK_BATCH));
+  s.job.total += batches.length;
+  await pool(batches, CONCURRENCY, async (batch) => {
+    if (s.job.stop) return;
+    const index = flat(s.tree.branches);
+    try {
+      const res = await callModel({ model, system: SYSTEM, kind: "links", schema: SCHEMAS.links, prompt: linksPrompt({ library: lib2, tree: s.tree.branches, items: batch.map((x) => s.items[x]) }) });
+      s.cost += res.cost;
+      for (const r of res.out.items) {
+        const i = s.items[r.id];
+        if (i) i.also = r.also.filter((x) => index.has(x) && x !== i.claudeBranch).slice(0, 3);
+      }
+      for (const x of batch) s.items[x].also ||= [];
+    } catch (e) {
+      note(id, `Links failed for ${batch.length} item(s): ${String(e.message).slice(0, 100)}`);
+    }
+    s.job.done++;
+  });
+  save(id);
 }
 async function rebuildThreads(id, model, scopes) {
   const s = load(id), lib2 = LIBS.get(id);
@@ -5433,11 +5569,12 @@ function answer(id, { qid, text, branch, newBranch, skip, items }) {
   const s = load(id), index = flat(s.tree.branches);
   const at = (/* @__PURE__ */ new Date()).toISOString();
   if (skip) {
-    if (items?.length) for (const x of items) s.snoozed[(qid.startsWith("f:") ? "f:" : "i:") + x] = at;
+    if (items?.length) for (const x of items) s.snoozed[(qid === "spot" ? "s:" : "i:") + x] = at;
     else s.snoozed[qid] = at;
     save(id);
     return { ok: true };
   }
+  if (qid === "spot") return spotAnswer(id, arguments[1].checks || []);
   const [kind, key] = [qid.slice(0, 1), qid.slice(2)];
   if (kind === "b") return sharpen(id, key, arguments[1]);
   if (kind === "t") {
@@ -5460,12 +5597,29 @@ function answer(id, { qid, text, branch, newBranch, skip, items }) {
       s.treeChangedAt = at;
     }
     if (!target || target !== "none" && !flat(s.tree.branches).has(target)) throw new Error("Pick a branch");
-    Object.assign(i, { branch: target, conf: 1, by: "owner", filed: target !== "none", offtopic: target === "none", disagree: false, finer: null });
+    Object.assign(i, { branch: target, conf: 1, by: "owner", rule: "owner", filed: target !== "none", offtopic: target === "none", links: (i.links || []).filter((l) => l !== target) });
     s.corrections.push({ at, text: i.text, branch: target });
     s.answers.push({ at, item: key, q: i.text, a: pathName(flat(s.tree.branches), target) });
   }
   save(id);
   return { ok: true };
+}
+function spotAnswer(id, checks) {
+  const s = load(id), index = flat(s.tree.branches), at = (/* @__PURE__ */ new Date()).toISOString();
+  let right = 0, moved = 0;
+  for (const ck of checks) {
+    const i = s.items[ck.id];
+    const to = ck.ok ? i?.branch : ck.branch;
+    if (!i || i.by === "owner" || !to || to !== "none" && !index.has(to)) continue;
+    i.check = { at, rule: i.rule, ok: !!ck.ok, was: i.branch };
+    Object.assign(i, { branch: to, conf: 1, by: "owner", rule: "owner", filed: to !== "none", offtopic: to === "none", links: (i.links || []).filter((l) => l !== to) });
+    s.corrections.push({ at, text: i.text, branch: to });
+    ck.ok ? right++ : moved++;
+  }
+  s.answers.push({ at, q: `Spot check of ${right + moved} filing(s)`, a: `${right} right, ${moved} moved` });
+  applyTrust(s);
+  save(id);
+  return { right, moved, ...counts(s) };
 }
 function sharpen(id, key, { merge, describe }) {
   const s = load(id), index = flat(s.tree.branches), at = (/* @__PURE__ */ new Date()).toISOString();
@@ -5483,7 +5637,8 @@ function sharpen(id, key, { merge, describe }) {
       i.branch = move(i.branch);
       i.guess = move(i.guess);
       i.claudeBranch = move(i.claudeBranch);
-      if (i.finer) i.finer.branch = move(i.finer.branch);
+      if (i.also) i.also = [...new Set(i.also.map(move))];
+      if (i.links) i.links = [...new Set(i.links.map(move))].filter((l) => l !== i.branch);
       i.alts = (i.alts || []).map((x) => ({ ...x, branch: move(x.branch) }));
     }
     for (const t of Object.values(s.threads)) t.branch = move(t.branch);
@@ -5513,7 +5668,7 @@ const findNode = (nodes2, id) => {
 const ctxKey = (s) => `${s.treeChangedAt || ""}|${s.corrections.length}`;
 const retry = (s) => {
   const index = flat(s.tree.branches), ctx = ctxKey(s);
-  return Object.values(s.items).filter((i) => i.by !== "owner" && i.placed && (!i.filed && i.ctx !== ctx || !index.has(i.branch) || i.finer && !index.has(i.finer.branch))).map((i) => i.id);
+  return Object.values(s.items).filter((i) => i.by !== "owner" && i.placed && (!i.filed && i.ctx !== ctx || i.branch !== "none" && !index.has(i.branch) || i.guess && i.guess !== "none" && !index.has(i.guess))).map((i) => i.id);
 };
 async function refile(id) {
   const s = load(id);
@@ -5528,8 +5683,9 @@ async function refile(id) {
   const ids = retry(s);
   s.job = { running: true, stage: "Filing again", done: 0, total: 0, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model: "" };
   try {
+    resettle(s);
     await placeItems(id, ids);
-    note(id, `Filed ${ids.length} item(s) again: ${counts(s).filed} filed, ${counts(s).review} to check`);
+    note(id, `Placed ${ids.length} item(s) again: ${counts(s).filed} filed, ${counts(s).guessed} best guesses`);
   } finally {
     s.job.running = false;
     s.job.stage = "Done";
@@ -5537,28 +5693,17 @@ async function refile(id) {
   }
   return counts(s);
 }
-function confirmAll(id, { items }) {
-  const s = load(id), at = (/* @__PURE__ */ new Date()).toISOString();
-  for (const key of items || []) {
-    const i = s.items[key];
-    if (!i || !(needsReview(i) || i.finer)) continue;
-    const branch = i.finer ? i.finer.branch : i.branch;
-    Object.assign(i, { branch, conf: 1, by: "owner", filed: branch !== "none", offtopic: branch === "none", disagree: false, finer: null });
-    s.corrections.push({ at, text: i.text, branch });
-  }
-  s.answers.push({ at, q: `${(items || []).length} items confirmed together`, a: "as guessed" });
-  save(id);
-  return counts(s);
-}
 async function refresh(id, { model } = {}) {
   const s = load(id);
   if (s.job?.running) throw new Error("Already processing");
-  s.job = { running: true, stage: "Filing again", done: 0, total: 0, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model: resolveModel(model || "claude-sonnet-5-5") };
+  s.job = { running: true, stage: "Filing again", done: 0, total: 0, started: (/* @__PURE__ */ new Date()).toISOString(), log: [], model: model ? resolveModel(model) : readModel(id) };
   save(id);
   (async () => {
+    await linkItems(id, Object.values(s.items).filter((i) => !i.dup && !i.also).map((i) => i.id), s.job.model);
+    resettle(s);
     await placeItems(id, retry(s));
-    note(id, `Filed again: ${counts(s).filed} filed, ${counts(s).review} to check`);
-    await rebuildThreads(id, s.job.model, changedScopes(s, flat(s.tree.branches)));
+    note(id, `Filed again: ${counts(s).filed} filed, ${counts(s).guessed} best guesses, ${counts(s).links} links`);
+    await rebuildThreads(id, topicModel(id), changedScopes(s, flat(s.tree.branches)));
     await weighQuestions(id);
     s.refreshedAt = (/* @__PURE__ */ new Date()).toISOString();
   })().catch((e) => note(id, `Stopped: ${e.message}`)).finally(() => {
@@ -5671,7 +5816,6 @@ const LIBRARY_ACTIONS = {
   crosscheck: (id, b) => crosscheck(id, b),
   stop: (id) => stop(id),
   refile: (id) => refile(id),
-  confirm: (id, b) => confirmAll(id, b),
   answer: (id, b) => answer(id, b),
   ask: (id, b) => ask(id, b.question, b)
 };

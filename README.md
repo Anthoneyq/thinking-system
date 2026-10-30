@@ -68,9 +68,10 @@ A normal run is about 15 model calls and 3-6 minutes; on Sonnet that is roughly 
 Point it at a folder of recorded calls (Teams or Zoom `.vtt`, Teams Word `.docx`, `.md`, `.txt`) and it builds one record of the business:
 
 - **Reads each call** into items: decisions, open questions, assumptions, to-dos, ideas, facts and preferences, each with who said it, when, and the exact words. Each item carries its own context, so it still makes sense on its own months later. Exact duplicate files are skipped.
-- **Files each item on your business tree**, the SOPs within SOPs, one level at a time. With Jev, each level is a calibrated probability and the path's product is the confidence. Nothing is filed below **95%**: an item files at the deepest branch that clears the bar, and everything else waits for you. When Jev and Claude disagree, or one word is used two ways ("ceiling" the cost cap, "ceiling" the damage), it waits for you too. Your corrections are fed back as examples, so filing gets better.
+- **Places each item on your business tree**, the SOPs within SOPs. Claude names its home and the other branches it also touches (a fee for website work touches pricing and the website); those links are how the parts of the business connect, and the map draws them. Jev walks the tree level by level as a second reader.
+- **Measures how sure the filing is instead of trusting a model's score.** How the two readers' picks relate is a rule (same branch, one inside the other, same area, linked, split). You spot-check a sample, ten at a time across every rule; a rule files on its own once it has been right **95%** of the time over 20 checks, and keeps being sampled at one check per 50 items it files. Until then its items show as best guesses. One word used two ways ("ceiling" the cost cap, "ceiling" the damage) always comes to you. Your answers go back to Jev as examples.
 - **Ties the same topic together across calls** and says where it stands: decided, open, assumed, done, or **never settled** (talked about several ways, no decision; it lists each way).
-- **Asks what it still needs**, one question at a time, until there is nothing left. Alike filing checks come in one batch.
+- **Asks what it still needs**, one question at a time, until there is nothing left: never-settled topics, the spot check, and overlaps in the tree (merge two branches, or say how they differ). Filing is never asked item by item, so questions don't grow with every call.
 - **Finds** where anything was said, split by the sense a word was used in, and answers questions from the record with sources.
 - **Cross-checks** (on demand, Opus): what was worked out in one part of the business that applies to another.
 
@@ -80,14 +81,14 @@ Set it up in `~/.thinking-system/config.json`:
 { "libraries": [{ "id": "acme", "name": "Acme Co", "sources": ["/path/to/call transcripts"], "dir": "/path/to/where the record lives" }] }
 ```
 
-Put your tree in `<dir>/tree.json` (`{ "name": "Acme Co", "branches": [{ "id": "ops", "name": "Running a job", "desc": "...", "children": [...] }] }`); good descriptions make filing sharper. Then open http://localhost:4477/library/acme, or `/conversations` in Claude Code, or `think library acme status|scan|process|next|answer|ask|crosscheck`. The record is also written as `<dir>/INDEX.md`. Reading costs about $0.10 a call on Sonnet; filing with Jev is a fraction of a cent.
+Put your tree in `<dir>/tree.json` (`{ "name": "Acme Co", "branches": [{ "id": "ops", "name": "Running a job", "desc": "...", "children": [...] }] }`); good descriptions make filing sharper. Then open http://localhost:4477/library/acme, or `/conversations` in Claude Code, or `think library acme status|scan|process|next|answer|ask|crosscheck`. The record is also written as `<dir>/INDEX.md`, with how sure each rule is and which branches connect most. Haiku reads (about $0.03 a call, set `readModel` on the library to change it) and Sonnet ties topics (`topicModel`); filing with Jev is a fraction of a cent.
 
 ## How it works
 
 - `server/engine.js`: run state, scheduler and the loop (frame, branch, come together, grow, ask, review, decide).
 - `server/prompts.js`: the rules, step prompts and strict JSON schemas. `server/methods.js`: the 20 thinking methods it chooses from.
 - `server/jev.js`: the Jev judgments (method picks, the gate, question weighing, reply checks).
-- `server/library/`: Conversations mode (parse calls, read, file level by level, tie topics, questions, cross-check, Markdown record). `src/LibraryView.jsx`: the spider web and the questions panel.
+- `server/library/`: Conversations mode (parse calls, read, links, file level by level, filing rules and spot checks, tie topics, questions, cross-check, Markdown record). `src/LibraryView.jsx`: the spider web and the questions panel.
 - `server/models.js`: calls `claude -p` lean (no tools, MCP or settings), or Codex, or a dry run.
 - `src/`: React + React Flow. Map view (radial, live) and Steps view.
 - `app/server.mjs` and `dist/` are built files, committed so the plugin runs without `npm install`. Rebuild with `npm install && npm run build`.

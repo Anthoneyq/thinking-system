@@ -53,12 +53,12 @@ export default function LibraryView({ id }) {
         <a className="brand" href="/" onClick={e => { e.preventDefault(); go('/') }}><i />Thinking System</a>
         <div className="lib-title">
           <h1>{v.name}</h1>
-          <span className="sub">{c.calls} calls · {c.items} items · {c.filed} filed · {c.threads} topics · ${c.cost.toFixed(2)} spent</span>
+          <span className="sub">{c.calls} calls · {c.items} items · {c.filed} filed · {c.guessed} best guesses · {c.links} links · {c.threads} topics · ${c.cost.toFixed(2)} spent</span>
         </div>
         <div className="lib-actions">
           <button className="btn" disabled={running || !!busy} onClick={() => act('scan')}>Check for new calls</button>
           {v.estimate.calls > 0 && <button className="primary" disabled={running || !!busy} onClick={() => act('process')}>Read {v.estimate.calls} new call{v.estimate.calls > 1 ? 's' : ''} (~${v.estimate.usd.toFixed(2)})</button>}
-          {v.pending > 0 && <button className="primary" disabled={running || !!busy} title="Files everything you haven't confirmed again, then rewrites only the topics whose items moved" onClick={() => act('refresh')}>Update with {v.pending} change{v.pending > 1 ? 's' : ''}</button>}
+          {v.pending > 0 && <button className="primary" disabled={running || !!busy} title="Places everything not yet filed again with your answers as examples, then rewrites only the topics whose items moved" onClick={() => act('refresh')}>Update with {v.pending} change{v.pending > 1 ? 's' : ''}</button>}
         </div>
       </header>
       {v.job && (running || v.job.log.length > 0) && <Job job={v.job} onStop={() => act('stop')} />}
@@ -67,7 +67,7 @@ export default function LibraryView({ id }) {
           <Crumbs index={index} focus={focus} setFocus={setFocus} name={v.name} />
           <Web v={v} index={index} focus={focus} selected={selected} setFocus={setFocus} onPick={pick} />
           <WebList v={v} index={index} focus={focus} setFocus={setFocus} onPick={pick} />
-          <p className="lib-legend sub"><b className="dot red" /> questions waiting on you there <b className="dot" /> items filed there. Click a branch to step into it; click the middle to step back out.</p>
+          <p className="lib-legend sub"><b className="dot red" /> questions waiting on you there <b className="dot" /> items that live there <b className="line" /> items that touch both branches. Click a branch to step into it; click the middle to step back out.</p>
         </section>
         <aside className="lib-panel">
           <div className="seg lib-tabs" role="tablist">
@@ -118,14 +118,30 @@ function Web({ v, index, focus, selected, setFocus, onPick }) {
   const W = 900, H = 640, cx = W / 2, cy = H / 2
   const R = kids.length > 10 ? 250 : 220
   const stat = id => v.byBranch[id] || { items: 0, need: 0, now: 0 }
-  const here = focus ? stat(focus) : { items: v.counts.filed, need: v.questions.length }
+  const here = focus ? stat(focus) : { items: v.counts.filed + v.counts.guessed, need: v.questions.length }
   const max = Math.max(1, ...kids.map(k => stat(k.id).items))
+  const pos = kids.map((k, i) => { const a = -Math.PI / 2 + (i / kids.length) * Math.PI * 2; return { a, x: cx + Math.cos(a) * R * 1.45, y: cy + Math.sin(a) * R } })
+  // Items that live under one branch here and touch another: drawn as threads between the two.
+  const kidOf = id => { for (let n = index.get(id); n; n = index.get(n.parent)) if ((n.parent || null) === (focus || null)) return kids.findIndex(k => k.id === n.id); return -1 }
+  const pairs = {}
+  for (const i of Object.values(v.items)) for (const l of i.links || []) {
+    const a = kidOf(i.branch), b = kidOf(l)
+    if (a < 0 || b < 0 || a === b) continue
+    const key = Math.min(a, b) + '|' + Math.max(a, b)
+    pairs[key] = (pairs[key] || 0) + 1
+  }
+  const links = Object.entries(pairs).sort((x, y) => y[1] - x[1]).slice(0, 18)
+  const most = Math.max(1, ...links.map(l => l[1]))
   return (
     <svg className="lib-web" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Business tree">
       {[0.55, 1, 1.32].map(f => <ellipse key={f} cx={cx} cy={cy} rx={R * f * 1.45} ry={R * f} className="web-ring" />)}
+      {links.map(([key, n]) => {
+        const [a, b] = key.split('|').map(Number), p = pos[a], q = pos[b]
+        const mx = cx + ((p.x + q.x) / 2 - cx) * 0.35, my = cy + ((p.y + q.y) / 2 - cy) * 0.35
+        return <path key={key} d={`M${p.x},${p.y} Q${mx},${my} ${q.x},${q.y}`} className="web-link" style={{ strokeWidth: 1 + 7 * Math.sqrt(n / most), opacity: 0.25 + 0.6 * n / most }}><title>{n} item(s) touch both {kids[a].name} and {kids[b].name}</title></path>
+      })}
       {kids.map((k, i) => {
-        const a = -Math.PI / 2 + (i / kids.length) * Math.PI * 2
-        const x = cx + Math.cos(a) * R * 1.45, y = cy + Math.sin(a) * R
+        const { a, x, y } = pos[i]
         const st = stat(k.id), need = st.need
         const r = 16 + 22 * Math.sqrt(st.items / max)
         const sub = k.children || []
@@ -143,14 +159,14 @@ function Web({ v, index, focus, selected, setFocus, onPick }) {
             <text x={x} y={y + 4} className="web-count">{st.items || ''}</text>
             {need > 0 && <g><rect x={x + r * 0.72 - (6 + String(need).length * 3.6)} y={y - r * 0.72 - 10} width={12 + String(need).length * 7.2} height={20} rx={10} className="web-need" /><text x={x + r * 0.72} y={y - r * 0.72 + 4} className="web-need-n">{need}</text></g>}
             <text x={x} y={Math.sin(a) > 0.3 ? y - r - 10 : y + r + 18} className="web-label">{k.name}</text>
-            <title>{k.name}: {st.items} items filed, {st.need} question(s) for you ({st.now} now){k.desc ? '\n' + k.desc : ''}</title>
+            <title>{k.name}: {st.items} items ({st.filed || 0} filed), {st.need} question(s) for you ({st.now} now){k.desc ? '\n' + k.desc : ''}</title>
           </g>
         )
       })}
       <g className="web-center" onClick={() => focus && setFocus(node.parent)} style={{ cursor: focus ? 'pointer' : 'default' }}>
         <ellipse cx={cx} cy={cy} rx={118} ry={66} />
         <text x={cx} y={cy - 8} className="web-center-name">{(node?.name || v.name).slice(0, 26)}</text>
-        <text x={cx} y={cy + 14} className="web-center-sub">{here.items} filed · {here.need} question{here.need === 1 ? '' : 's'} for you</text>
+        <text x={cx} y={cy + 14} className="web-center-sub">{here.items} items · {here.need} question{here.need === 1 ? '' : 's'} for you</text>
         {focus && <text x={cx} y={cy + 34} className="web-center-sub">← step out</text>}
       </g>
     </svg>
@@ -165,7 +181,7 @@ function WebList({ v, index, focus, setFocus, onPick }) {
     <ul className="web-list">
       {kids.map(k => { const st = v.byBranch[k.id] || {}; return (
         <li key={k.id}><button className="btn" onClick={() => k.children?.length ? setFocus(k.id) : onPick(k.id)}>
-          <span>{k.name}</span><span className="sub">{st.items || 0} filed{st.need ? <b className="web-list-need"> · {st.need} for you</b> : ''}</span>
+          <span>{k.name}</span><span className="sub">{st.items || 0} items{st.need ? <b className="web-list-need"> · {st.need} for you</b> : ''}</span>
         </button></li>) })}
     </ul>
   )
@@ -184,7 +200,7 @@ function Needs({ v, index, id, reload, onPlace }) {
   return (
     <div className="lib-needs">
       <div className="seg lib-now" role="radiogroup">
-        <button role="radio" aria-checked={!later} onClick={() => { setLater(false); setK(0) }} title="Never settled, overlaps in the tree, big filing batches, and the questions Jev says change the most">Now ({nowCount})</button>
+        <button role="radio" aria-checked={!later} onClick={() => { setLater(false); setK(0) }} title="Never settled, the spot check, overlaps in the tree, and the questions Jev says change the most">Now ({nowCount})</button>
         <button role="radio" aria-checked={later} onClick={() => { setLater(true); setK(0) }}>Later ({v.questions.length - nowCount})</button>
       </div>
       {!qs.length ? <p className="sub">Nothing here.</p> : <>
@@ -194,9 +210,9 @@ function Needs({ v, index, id, reload, onPlace }) {
       </div>
       {all
         ? <ol className="lib-qlist">{qs.map((x, j) => <li key={x.id}><button className="ghost" onClick={() => { setK(j); setAll(false) }}>
-            <span className={'tag' + (x.kind !== 'thread' ? ' dashed' : x.status === 'unsettled' ? ' red' : '')}>{x.kind === 'thread' ? STATUS[x.status] : x.kind === 'group' ? `Where? ${x.items.length}` : x.kind === 'tree' ? 'Tree' : 'Where?'}</span>{x.q}</button></li>)}</ol>
+            <span className={'tag' + (x.kind !== 'thread' ? ' dashed' : x.status === 'unsettled' ? ' red' : '')}>{x.kind === 'thread' ? STATUS[x.status] : x.kind === 'spot' ? `Spot check ${x.items.length}` : x.kind === 'tree' ? 'Tree' : 'Where?'}</span>{x.q}</button></li>)}</ol>
         : q.kind === 'thread' ? <ThreadQ key={q.id} q={q} v={v} send={send} skip={() => send({ skip: true })} />
-        : q.kind === 'group' ? <GroupQ key={q.id + q.items.length} q={q} id={id} index={index} reload={reload} />
+        : q.kind === 'spot' ? <SpotQ key={q.items.map(i => i.id).join()} q={q} id={id} index={index} reload={reload} target={v.target} />
         : q.kind === 'tree' ? <TreeQ key={q.id} q={q} send={send} skip={() => send({ skip: true })} />
         : <PlaceQ key={q.id} q={q} v={v} index={index} send={send} skip={() => send({ skip: true })} onPlace={onPlace} />}
       </>}
@@ -251,35 +267,44 @@ function TreeQ({ q, send, skip }) {
   )
 }
 
-// Many alike items, one click: untick any that don't fit, confirm the rest or move them together.
-function GroupQ({ q, id, index, reload }) {
-  const [off, setOff] = useState(new Set())
-  const [to, setTo] = useState('')
+// A sample of filings across every rule. Each is right unless you say otherwise; the answers measure how often each
+// rule is right, and a rule that keeps being right files on its own from then on.
+function SpotQ({ q, id, index, reload, target }) {
+  const [wrong, setWrong] = useState({})
   const [busy, setBusy] = useState(false)
-  const on = q.items.filter(i => !off.has(i.id)).map(i => i.id)
-  const flip = x => setOff(o => { const n = new Set(o); n.has(x) ? n.delete(x) : n.add(x); return n })
-  const run = async fn => { setBusy(true); try { await fn(); await reload() } finally { setBusy(false) } }
   const options = [...index.values()].map(n => ({ id: n.id, label: `${'  '.repeat(n.depth)}${n.name}` }))
+  const mark = (x, b) => setWrong(w => { const n = { ...w }; b === undefined ? delete n[x] : (n[x] = b); return n })
+  const moved = Object.keys(wrong).length
+  const run = async body => { setBusy(true); try { await api(`library/${id}/answer`, body); await reload() } finally { setBusy(false) } }
   return (
     <div className="lib-q">
-      <span className="tag dashed">{q.finer ? 'One level in?' : 'Where do these belong?'}</span><span className="sub">{q.finer ? 'Already filed one level up; this only sharpens it' : `Under the ${Math.round(0.95 * 100)}% bar`}</span>
+      <span className="tag">Spot check</span><span className="sub">Measures how often filing is right, so it can file on its own</span>
       <h3>{q.q}</h3>
-      <ul className="lib-group">
+      <p className="sub">Each one is right unless you mark it. Right means the home fits; the links are what else it touches.</p>
+      <ol className="lib-spot">
         {q.items.map(i => (
-          <li key={i.id}><label>
-            <input type="checkbox" checked={!off.has(i.id)} onChange={() => flip(i.id)} />
-            <span>{i.text} <span className="sub">{pct(i.conf)}{i.why && !i.why.includes('% sure') ? ` · ${i.why}` : ''} · {i.file}{i.at ? ' ' + i.at : ''}</span></span>
-          </label></li>
+          <li key={i.id} className={i.id in wrong ? 'off' : ''}>
+            <p>{i.text}</p>
+            <div className="lib-spot-home"><b>{i.where}</b>{i.links.length > 0 && <span className="sub"> · also touches {i.links.map(l => l.name.split(' › ').at(-1)).join(', ')}</span>}</div>
+            <div className="lib-q-bar">
+              <button className={'btn' + (i.id in wrong ? '' : ' on')} onClick={() => mark(i.id)}>Right</button>
+              <button className={'btn' + (i.id in wrong ? ' on' : '')} onClick={() => mark(i.id, wrong[i.id] ?? '')}>Wrong</button>
+              {i.id in wrong && <select value={wrong[i.id]} onChange={e => mark(i.id, e.target.value)}><option value="">Where does it belong?</option><option value="none">Not this business</option>{options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select>}
+              <span className="sub">{i.file}{i.at ? ' ' + i.at : ''}</span>
+            </div>
+          </li>
         ))}
-      </ul>
+      </ol>
       <div className="lib-q-bar">
-        <button className="primary" disabled={!on.length || busy} onClick={() => run(() => api(`library/${id}/confirm`, { items: on }))}>Yes, {on.length} belong in {q.name.split(' › ').at(-1)}</button>
-        <button className="ghost" disabled={busy} onClick={() => run(() => api(`library/${id}/answer`, { qid: q.id, skip: true, items: q.items.map(i => i.id) }))}>Skip for now</button>
+        <button className="primary" disabled={busy || Object.values(wrong).some(b => !b)} onClick={() => run({ qid: 'spot', checks: q.items.map(i => i.id in wrong ? { id: i.id, ok: false, branch: wrong[i.id] } : { id: i.id, ok: true }) })}>
+          Save: {q.items.length - moved} right{moved ? `, ${moved} moved` : ''}</button>
+        <button className="ghost" disabled={busy} onClick={() => run({ qid: 'spot', skip: true, items: q.items.map(i => i.id) })}>Different sample</button>
       </div>
-      <div className="lib-q-bar">
-        <select value={to} onChange={e => setTo(e.target.value)}><option value="">…or move the ticked ones to</option><option value="none">Not this business</option>{options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
-        <button className="btn" disabled={!to || !on.length || busy} onClick={() => run(async () => { for (const x of on) await api(`library/${id}/answer`, { qid: 'i:' + x, branch: to }) })}>Move {on.length}</button>
-      </div>
+      <details className="lib-rules"><summary>How sure each rule is</summary>
+        <table><thead><tr><th>Rule</th><th>Items</th><th>Checked</th><th>Right</th></tr></thead>
+          <tbody>{q.rules.map(r => <tr key={r.rule}><td>{r.label}</td><td>{r.items}</td><td>{r.checked} of {r.need}</td><td>{r.right == null ? '-' : pct(r.right)}{r.trusted ? ' · files on its own' : ''}</td></tr>)}</tbody></table>
+        <p className="sub">A rule files on its own after 20 checks at {pct(target)} or better.</p>
+      </details>
     </div>
   )
 }
@@ -317,7 +342,7 @@ function Items({ ids, v }) {
     <ul className="lib-items">
       {ids.map(x => v.items[x]).filter(Boolean).sort((a, b) => b.date.localeCompare(a.date)).map(i => (
         <li key={i.id}>
-          <span className="tag dashed">{TYPE[i.type]}</span><span className="sub">{i.date}{i.who ? ' · ' + i.who : ''}</span>
+          <span className="tag dashed">{TYPE[i.type]}</span>{!i.filed && i.branch !== 'none' && <span className="tag dashed" title="Placed by a rule that hasn't yet proven itself in spot checks">best guess</span>}<span className="sub">{i.date}{i.who ? ' · ' + i.who : ''}</span>
           <p>{i.text}</p>
           {i.quote && <blockquote>“{i.quote}”<cite>{i.file}{i.at ? ' at ' + i.at : ''}</cite></blockquote>}
         </li>
@@ -331,12 +356,25 @@ function Branch({ v, index, focus, setFocus }) {
   const under = id => id === focus || !focus || id.startsWith(focus + '.')
   const ts = Object.values(v.threads).filter(t => under(t.branch))
   const node = focus ? index.get(focus) : null
-  const loose = Object.values(v.items).filter(i => i.filed && i.branch !== 'none' && under(i.branch) && !Object.values(v.threads).some(t => t.items.includes(i.id)))
+  const inThread = new Set(Object.values(v.threads).flatMap(t => t.items))
+  const loose = Object.values(v.items).filter(i => i.placed && !i.dup && i.branch !== 'none' && under(i.branch) && !inThread.has(i.id))
+  // What this branch touches elsewhere, either way round, grouped two levels down.
+  const area = bid => { const p = []; for (let n = index.get(bid); n; n = index.get(n.parent)) p.unshift(n); return p[Math.min(1, p.length - 1)] }
+  const conn = {}
+  if (focus) for (const i of Object.values(v.items)) {
+    if (i.dup || !i.links?.length) continue
+    const ends = under(i.branch) ? i.links.filter(l => !under(l)) : i.links.some(under) ? [i.branch] : []
+    for (const e of ends) { const a = area(e); if (a) (conn[a.id] ||= { node: a, ids: new Set() }).ids.add(i.id) }
+  }
+  const conns = Object.values(conn).sort((a, b) => b.ids.size - a.ids.size)
   return (
     <div className="lib-branch">
       <h3>{node?.name || v.name}</h3>
       {node?.desc && <p className="sub">{node.desc}</p>}
       {node?.children?.length > 0 && <div className="lib-chips">{node.children.map(ch => <button key={ch.id} className="btn" onClick={() => setFocus(ch.id)}>{ch.name} <span className="sub">{v.byBranch[ch.id]?.items || 0}</span></button>)}</div>}
+      {conns.length > 0 && <section><h4>Connected to <span className="sub">· items that touch both</span></h4>
+        <div className="lib-chips">{conns.slice(0, 12).map(x => <button key={x.node.id} className={'btn' + (open === 'c:' + x.node.id ? ' on' : '')} onClick={() => setOpen(open === 'c:' + x.node.id ? null : 'c:' + x.node.id)}>{x.node.name} <span className="sub">{x.ids.size}</span></button>)}</div>
+        {open?.startsWith('c:') && conn[open.slice(2)] && <Items ids={[...conn[open.slice(2)].ids]} v={v} />}</section>}
       {!ts.length && <p className="sub">No topics here yet.</p>}
       {ORDER.map(st => {
         const list = ts.filter(t => t.status === st).sort((a, b) => (b.last || '').localeCompare(a.last || ''))
@@ -357,7 +395,7 @@ function Branch({ v, index, focus, setFocus }) {
           </section>
         )
       })}
-      {loose.length > 0 && <section><h4>Filed, not yet in a topic <span className="sub">{loose.length}</span></h4><Items ids={loose.map(i => i.id)} v={v} /></section>}
+      {loose.length > 0 && <section><h4>Here, not yet in a topic <span className="sub">{loose.length}</span></h4><Items ids={loose.map(i => i.id)} v={v} /></section>}
     </div>
   )
 }

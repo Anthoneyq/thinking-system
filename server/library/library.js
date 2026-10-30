@@ -1,6 +1,8 @@
 // Conversations mode: every recorded call read into items, each item filed on the business tree (SOPs within SOPs),
 // the same topic tied together across calls, and one short list of what still needs the owner.
-// Claude reads and writes; Jev files each item level by level and gives the confidence. Below the bar, a person decides.
+// Claude reads and writes; Jev walks the tree level by level as a second reader. An item can touch several branches
+// (its links); it lives at one (its home). Whether a home counts as filed is measured: each way of agreeing is a rule,
+// your spot checks say how often each rule is right, and a rule files on its own once it is right 95% of the time.
 import { EventEmitter } from 'node:events'
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync } from 'node:fs'
 import { join, extname, dirname, basename } from 'node:path'
@@ -8,15 +10,15 @@ import { callModel, resolveModel } from '../models.js'
 import { config } from '../store.js'
 import { JEV_AVAILABLE, jevAsk } from '../jev.js'
 import { parseFile, chunks, KINDS } from './parse.js'
-import { SCHEMAS, SYSTEM, extractPrompt, threadsPrompt, crosscheckPrompt, askPrompt } from './prompts.js'
+import { SCHEMAS, SYSTEM, extractPrompt, linksPrompt, threadsPrompt, crosscheckPrompt, askPrompt } from './prompts.js'
 import { writeMarkdown } from './export.js'
 
 export const bus = new EventEmitter()
 bus.setMaxListeners(100)
 
-export const FILE_AT = 0.95 // at or above: filed on its own; below: a person checks it
-const CONCURRENCY = 3
-const SONNET_IN = 3 / 1e6, SONNET_OUT = 15 / 1e6
+export const TARGET = 0.95 // a rule files on its own once your spot checks find it right this often
+const MIN_CHECKS = 20, CHECK_EVERY = 50, SPOT = 10 // checks per rule: 20 to trust it, then one per 50 items it files
+const CONCURRENCY = 3, LINK_BATCH = 60
 
 // Libraries come from ~/.thinking-system/config.json: { "libraries": [{ "id", "name", "sources": [folders], "dir" }] }.
 const LIBS = new Map((config.libraries || []).map(l => [l.id, { ...l, sources: [].concat(l.sources || l.source || []) }]))
@@ -78,18 +80,19 @@ function counts(s) {
     newCalls: Object.values(s.calls).filter(c => !c.dupOf && c.status !== 'done').length,
     items: items.length,
     filed: items.filter(i => i.filed && i.branch !== 'none').length,
-    review: items.filter(needsReview).length,
+    guessed: items.filter(i => i.placed && !i.filed && i.branch !== 'none').length,
+    links: items.reduce((a, i) => a + (i.links?.length || 0), 0),
     threads: Object.keys(s.threads).length,
     open: Object.values(s.threads).filter(t => ['unsettled', 'open', 'assumed'].includes(t.status)).length,
     cost: s.cost,
   }
 }
-const needsReview = i => !i.filed && i.placed && !i.offtopic
-// Where an item sits for topics: your call, else Jev's best guess. Topics use every item; unconfirmed ones are counted.
-const home = i => i.by === 'owner' ? i.branch : i.finer?.branch || i.branch
-const threadable = i => i.placed && !i.offtopic && !i.dup && home(i) !== 'none'
+// Every placed item has a home. Topics use every item; the ones not yet filed are counted as best guesses.
+const home = i => i.branch
+const threadable = i => i.placed && !i.dup && i.branch !== 'none'
 
-// The one list of what still needs the owner: unsettled first, then filing checks, then open and assumed.
+// The one list of what still needs the owner: unsettled topics, one spot check of filings, tree overlaps, then the rest.
+// Filing is never asked item by item (that grows with every call); the spot check is a sample, sized by how much each rule files.
 export function questions(id) {
   const s = load(id), index = flat(s.tree.branches)
   const rank = { unsettled: 0, open: 2, assumed: 3 }
@@ -101,35 +104,19 @@ export function questions(id) {
       order: rank[t.status] - (t.weight ?? 0.5) - Math.min(t.items.length, 10) / 20,
       now: t.status === 'unsettled' || (t.weight ?? 0.5) >= 0.8,
     }))
-  // Filing checks come grouped by the branch they look like, so twenty alike items take one click.
-  const groups = {}
-  for (const i of Object.values(s.items)) {
-    if (needsReview(i) && !s.snoozed['i:' + i.id]) (groups['r:' + i.branch] ||= []).push(i)
-    else if (i.finer && i.by !== 'owner' && !s.snoozed['f:' + i.id]) (groups['f:' + i.finer.branch] ||= []).push(i)
-  }
-  const fromItems = []
-  for (const [key, list] of Object.entries(groups)) {
-    const finer = key.startsWith('f:'), branch = key.slice(2)
-    if (list.length === 1 && !finer) { fromItems.push(placeQ(list[0], index)); continue }
-    fromItems.push({
-      id: key, kind: 'group', finer, branch, name: pathName(index, branch), q: finer
-        ? `${list.length} item(s) filed under ${pathName(index, list[0].branch)} look like they belong one level in, in ${pathName(index, branch)}.`
-        : `${list.length} items look like they belong in ${pathName(index, branch)}.`,
-      items: list.sort((a, b) => (b.finer?.p ?? b.conf) - (a.finer?.p ?? a.conf)).map(i => ({ id: i.id, text: i.text, conf: i.finer?.p ?? i.conf, why: finer ? '' : reviewWhy(i), file: i.file, at: i.at })),
-      order: finer ? 5 - list.length / 100 : 1 - list.length / 100,
-      now: !finer && list.length >= 10,
-    })
-  }
-  return [...fromThreads, ...fromItems, ...confusions(s, index)].sort((a, b) => a.order - b.order)
+  // Only items that use one word two ways are asked one by one: no rule can tell which sense was meant.
+  const fromItems = Object.values(s.items).filter(i => i.rule === 'mixed' && i.by !== 'owner' && !i.dup && !s.snoozed['i:' + i.id]).map(i => placeQ(i, index))
+  const check = spotCheck(s, index)
+  return [...fromThreads, ...(check ? [check] : []), ...fromItems, ...confusions(s, index)].sort((a, b) => a.order - b.order)
 }
 
 // Branches items keep landing between: the tree has a hole or an overlap there. Ask once; the answer sharpens every filing.
 function confusions(s, index) {
   const pairs = {}
   for (const i of Object.values(s.items)) {
-    if (!(needsReview(i) || i.finer) || i.by === 'owner') continue
-    const g = i.finer?.branch || i.branch
-    const other = i.disagree ? i.claudeBranch : i.alts?.[0]?.p >= 0.15 ? i.alts[0].branch : null
+    // Only where the two readers truly split; an item that touches both branches is a link, not an overlap.
+    if (i.by === 'owner' || !['split', 'shared'].includes(i.rule)) continue
+    const g = i.guess, other = i.claudeBranch
     if (!other || other === 'none' || g === 'none' || !index.has(other) || !index.has(g) || within(index, g, other) || within(index, other, g)) continue
     const key = [g, other].sort().join('|')
     ;(pairs[key] ||= []).push(i)
@@ -152,25 +139,107 @@ const placeQ = (i, index) => ({
   alts: (i.alts || []).map(a => ({ ...a, name: pathName(index, a.branch) })), newBranch: i.new_branch,
   order: 1.5 + (1 - (i.conf || 0)) * 0.5,
 })
-const reviewWhy = i => i.mixed ? `Uses a word two ways: ${i.mixed}`
-  : i.disagree ? `Two readers disagree: Jev says one branch, Claude another`
-  : `${Math.round((i.conf || 0) * 100)}% sure, under the ${Math.round(FILE_AT * 100)}% bar`
+const reviewWhy = i => `Uses a word two ways: ${i.mixed}`
+
+// ---------- filing rules: how Jev's and Claude's picks relate decides the home; spot checks decide if that rule files ----------
+export const RULES = {
+  same: 'Jev and Claude picked the same branch, Jev 50% sure or more',
+  'same-low': 'Jev and Claude picked the same branch, Jev under 50% sure',
+  nested: "One picked a part of the other's branch: filed at the part",
+  shared: 'Same area, different parts: filed at the area',
+  linked: "Different branches, and Claude says it touches both: home at Claude's, linked to Jev's",
+  split: "Jev and Claude disagree: Claude's pick",
+  none: 'Both say it is not about this business',
+  claude: 'Claude alone (Jev was not available)',
+}
+const related = (index, a, b) => a === b || within(index, a, b) || within(index, b, a)
+const common = (index, a, b) => { const pa = pathOf(index, a).map(n => n.id); return pathOf(index, b).map(n => n.id).filter(x => pa.includes(x)).at(-1) || null }
+
+// Home and links from the two readers' picks. Pure: re-running it on stored picks costs nothing.
+function settle(i, index) {
+  if (i.by === 'owner') return
+  const c = index.has(i.claudeBranch) ? i.claudeBranch : 'none'
+  const j = i.by === 'claude' ? null : index.has(i.guess) ? i.guess : 'none'
+  const also = (i.also || []).filter(x => index.has(x))
+  const both = j && j !== 'none' && c !== 'none'
+  let rule, branch
+  if (i.mixed) [rule, branch] = ['mixed', c !== 'none' ? c : j || 'none']
+  else if (!j) [rule, branch] = ['claude', c]
+  else if (j === 'none' && c === 'none') [rule, branch] = ['none', 'none']
+  else if (j === c) [rule, branch] = [i.guessConf >= 0.5 ? 'same' : 'same-low', c]
+  else if (both && related(index, j, c)) [rule, branch] = ['nested', index.get(j).depth >= index.get(c).depth ? j : c]
+  else if (both && common(index, j, c)) [rule, branch] = ['shared', common(index, j, c)]
+  else if (j !== 'none' && also.some(a => related(index, a, j))) [rule, branch] = ['linked', c]
+  else [rule, branch] = ['split', c !== 'none' ? c : j]
+  const links = branch === 'none' ? [] : [...new Set([...also, ...(rule === 'linked' ? [j] : [])])].filter(x => !related(index, x, branch))
+  Object.assign(i, { rule, branch, links, placed: true })
+  delete i.finer; delete i.disagree
+}
+
+// How often each rule has been right in your spot checks. A checked item counts under the rule it was filed by.
+export function ruleStats(s) {
+  const st = Object.fromEntries(Object.entries(RULES).map(([rule, label]) => [rule, { rule, label, items: 0, checked: 0, wrong: 0 }]))
+  for (const i of Object.values(s.items)) {
+    const x = !i.dup && i.placed && st[i.check?.rule || i.rule]
+    if (!x) continue
+    x.items++
+    if (i.check) { x.checked++; if (!i.check.ok) x.wrong++ }
+  }
+  for (const x of Object.values(st)) {
+    x.need = Math.max(MIN_CHECKS, Math.ceil(x.items / CHECK_EVERY))
+    x.right = x.checked ? (x.checked - x.wrong) / x.checked : null
+    x.trusted = x.checked >= MIN_CHECKS && x.right >= TARGET
+  }
+  return st
+}
+function applyTrust(s) {
+  const st = ruleStats(s)
+  for (const i of Object.values(s.items)) {
+    if (!i.placed || i.by === 'owner') continue
+    i.filed = i.branch !== 'none' && !!st[i.rule]?.trusted
+    i.offtopic = i.branch === 'none' && !!st.none.trusted
+  }
+}
+function resettle(s) {
+  const index = flat(s.tree.branches)
+  for (const i of Object.values(s.items)) if (i.placed) settle(i, index)
+  applyTrust(s)
+}
+
+// A stable sample (same items until answered), taken across rules so each one gets measured.
+const hash = x => { let h = 2166136261; for (const ch of x) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0 }
+function spotCheck(s, index) {
+  const st = ruleStats(s)
+  const pools = Object.values(st).filter(x => x.checked < x.need).sort((a, b) => b.items - a.items).map(x => ({
+    x, list: Object.values(s.items).filter(i => i.rule === x.rule && i.by !== 'owner' && !i.dup && !s.snoozed['s:' + i.id])
+      .sort((a, b) => hash(a.id) - hash(b.id)).slice(0, x.need - x.checked),
+  })).filter(p => p.list.length)
+  if (!pools.length) return null
+  const pick = []
+  for (let k = 0; pick.length < SPOT && pools.some(p => p.list[k]); k++) for (const p of pools) if (p.list[k] && pick.length < SPOT) pick.push(p.list[k])
+  const left = pools.reduce((a, p) => a + p.list.length, 0)
+  return {
+    id: 'spot', kind: 'spot', q: `Are these in the right place? ${left} check${left > 1 ? 's' : ''} left before filing can be trusted on its own.`,
+    items: pick.map(i => ({ id: i.id, text: i.text, context: i.context, file: i.file, at: i.at, branch: i.branch, where: pathName(index, i.branch), rule: i.rule, links: (i.links || []).map(l => ({ id: l, name: pathName(index, l) })) })),
+    rules: Object.values(st).filter(x => x.items), left, order: -5, now: true,
+  }
+}
 
 export function view(id) {
   const s = load(id), lib = LIBS.get(id), index = flat(s.tree.branches)
   // Per branch, counted up to every parent: filed items, and the question cards waiting on you there (same cards as the list).
   const byBranch = {}
-  const bump = (bid, key) => { for (const p of pathOf(index, bid)) { const b = (byBranch[p.id] ||= { items: 0, need: 0, now: 0 }); b[key]++ } }
-  for (const i of Object.values(s.items)) if (i.filed && !i.dup && i.branch !== 'none') bump(i.branch, 'items')
+  const bump = (bid, key) => { for (const p of pathOf(index, bid)) { const b = (byBranch[p.id] ||= { items: 0, filed: 0, need: 0, now: 0 }); b[key]++ } }
+  for (const i of Object.values(s.items)) if (i.placed && !i.dup && i.branch !== 'none') { bump(i.branch, 'items'); if (i.filed) bump(i.branch, 'filed') }
   const qs = questions(id)
-  for (const q of qs) for (const bid of q.kind === 'thread' ? [s.threads[q.thread].branch] : q.kind === 'tree' ? [q.a.id, q.b.id] : q.kind === 'group' ? [q.branch] : [q.guess]) {
+  for (const q of qs) for (const bid of q.kind === 'thread' ? [s.threads[q.thread].branch] : q.kind === 'tree' ? [q.a.id, q.b.id] : q.kind === 'place' ? [q.guess] : []) {
     bump(bid, 'need'); if (q.now) bump(bid, 'now')
   }
   return {
-    id, name: lib.name, dir: lib.dir, sources: lib.sources, fileAt: FILE_AT, jev: JEV_AVAILABLE,
+    id, name: lib.name, dir: lib.dir, sources: lib.sources, target: TARGET, jev: JEV_AVAILABLE, rules: Object.values(ruleStats(s)).filter(x => x.items),
     tree: s.tree, byBranch, counts: counts(s), calls: Object.values(s.calls).sort((a, b) => b.date.localeCompare(a.date)),
     items: s.items, threads: s.threads, crosslinks: s.crosslinks, answers: s.answers.slice(-50), questions: qs,
-    job: s.job, version: s.version, estimate: estimate(s),
+    job: s.job, version: s.version, estimate: estimate(s, id),
     pending: s.corrections.filter(c => c.at > (s.refreshedAt || '')).length + (s.treeChangedAt > (s.refreshedAt || '') ? 1 : 0),
   }
 }
@@ -204,13 +273,16 @@ export function scan(id) {
   return { added, ...counts(s) }
 }
 
-// Rough cost of reading the new calls on Sonnet: the transcript plus the tree in, about a fifth back out.
-function estimate(s) {
+// Reading pulls items out (Haiku does it well at a fifth of Sonnet's price); topics weigh what was settled, so Sonnet.
+const readModel = id => resolveModel(LIBS.get(id).readModel || 'claude-haiku-5-5')
+const topicModel = id => resolveModel(LIBS.get(id).topicModel || 'claude-sonnet-5-5')
+
+// Rough cost of the new calls, from measured runs: reading per 1,000 characters on each model, plus filing and topics per call.
+const READ_PER_K = { 'claude-haiku-5-5': 0.0007, 'claude-sonnet-5-5': 0.0037, 'claude-opus-5-5': 0.0185 }
+function estimate(s, id) {
   const calls = Object.values(s.calls).filter(c => c.status === 'new')
-  const tree = JSON.stringify(s.tree.branches).length / 3
   const chars = calls.reduce((a, c) => a + c.chars, 0)
-  const tokens = chars / 4 + calls.length * tree / 4
-  return { calls: calls.length, usd: Math.round((tokens * SONNET_IN + chars / 4 * 0.25 * SONNET_OUT + calls.length * 0.05) * 100) / 100 }
+  return { calls: calls.length, usd: Math.round((chars / 1000 * (READ_PER_K[readModel(id)] ?? 0.0037) + calls.length * 0.05) * 100) / 100 }
 }
 
 // ---------- process: read new calls, file their items, rebuild threads where items landed, weigh questions ----------
@@ -218,7 +290,7 @@ function estimate(s) {
 export function processLibrary(id, { model, only } = {}) {
   const s = load(id)
   if (s.job?.running) throw new Error('Already processing')
-  model = resolveModel(model || 'claude-sonnet-5-5')
+  model = model ? resolveModel(model) : readModel(id)
   s.job = { running: true, stage: 'Reading calls', done: 0, total: 0, started: new Date().toISOString(), log: [], model }
   save(id)
   pipeline(id, model, only).catch(e => note(id, `Stopped: ${e.message}`)).finally(() => { s.job.running = false; s.job.stage = 'Done'; save(id, true) })
@@ -267,6 +339,7 @@ async function pipeline(id, model, only) {
         const branch = idx.has(it.branch) ? it.branch : 'none'
         s.items[iid] = {
           id: iid, call: p.call.id, file: p.call.file, date: p.call.date, part: p.part, ...(p.call.note ? { note: true } : {}), ...it,
+          also: it.also.filter(x => idx.has(x) && x !== branch).slice(0, 3),
           claudeBranch: branch, claudeConf: it.confidence, branch, conf: it.confidence, placed: false, filed: false,
         }
         fresh.push(iid)
@@ -287,9 +360,9 @@ async function pipeline(id, model, only) {
   for (const c of todo) if (c.status === 'error') for (const i of Object.values(s.items)) if (i.call === c.id) delete s.items[i.id]
 
   await placeItems(id, fresh.filter(i => s.items[i]))
-  await rebuildThreads(id, model, changedScopes(s, index()))
+  await rebuildThreads(id, topicModel(id), changedScopes(s, index()))
   await weighQuestions(id)
-  note(id, `Done: ${fresh.length} new items, ${counts(s).review} to check, ${counts(s).open} open threads. Spent $${s.cost.toFixed(2)} so far.`)
+  note(id, `Done: ${fresh.length} new items, ${counts(s).filed} filed, ${counts(s).guessed} best guesses, ${counts(s).open} open threads. Spent $${s.cost.toFixed(2)} so far.`)
 }
 
 // Words used in more than one sense across the record, so the next read keeps them apart.
@@ -310,8 +383,9 @@ async function placeItems(id, ids) {
   s.job.stage = `Filing ${ids.length} item(s)`
   const index = flat(s.tree.branches)
   if (!JEV_AVAILABLE) {
-    for (const iid of ids) { settle(s.items[iid], s.items[iid].claudeBranch, s.items[iid].claudeConf ?? 0, [], 'claude', index); s.items[iid].ctx = ctxKey(s) }
-    note(id, 'Filed with Claude\'s own confidence (no Jev key set)')
+    for (const iid of ids) { Object.assign(s.items[iid], { by: 'claude', ctx: ctxKey(s) }); settle(s.items[iid], index) }
+    applyTrust(s)
+    note(id, 'Placed by Claude alone (no Jev key set)')
     return save(id)
   }
   // Your corrections teach the filing: a few per branch, newest first, so one big batch doesn't drown the rest.
@@ -358,28 +432,39 @@ async function placeItems(id, ids) {
   walking.forEach(finish)
   const ctx = ctxKey(s)
   for (const iid of ids) if (s.items[iid]) s.items[iid].ctx = ctx
+  applyTrust(s)
   function finish(w) {
     const i = s.items[w.iid]
-    if (w.fail) return settle(i, i.claudeBranch, i.claudeConf ?? 0, [], 'claude', index)
-    settle(i, w.at || 'none', w.p, w.alts.filter(a => a.branch && a.branch !== '_root').sort((a, b) => b.p - a.p).slice(0, 3), 'jev', index, w.path)
+    if (w.fail) { i.by = 'claude'; return settle(i, index) }
+    let alts = w.alts.filter(a => a.branch && a.branch !== '_root').sort((a, b) => b.p - a.p).slice(0, 3)
+    const c = i.claudeBranch
+    if (c !== 'none' && c !== w.at && !alts.some(a => a.branch === c)) alts = [...alts, { branch: c, p: i.claudeConf ?? 0, by: 'claude' }]
+    Object.assign(i, { guess: w.at || 'none', guessConf: Math.round(w.p * 1000) / 1000, conf: Math.round(w.p * 1000) / 1000, alts, by: 'jev' })
+    settle(i, index)
   }
   save(id)
 }
 
-// Nothing is filed below the bar: an item files at the deepest branch its path clears it at. If Jev's best branch sits
-// deeper than that, it is kept as the finer guess for a quick confirm; if no level clears the bar, a person decides.
-function settle(i, guess, conf, alts, by, index, path = []) {
-  const c = i.claudeBranch
-  const agree = by === 'claude' || guess === c || (guess !== 'none' && c !== 'none' && (within(index, guess, c) || within(index, c, guess)))
-  if (c !== guess && !alts.some(a => a.branch === c) && c !== 'none') alts = [...alts, { branch: c, p: i.claudeConf ?? 0, by: 'claude' }].slice(0, 4)
-  const clears = by === 'jev' ? path.filter(x => x.p >= FILE_AT).at(-1) : (conf >= FILE_AT ? { id: guess, p: conf } : null)
-  const top = guess === 'none' ? (conf >= FILE_AT ? { id: 'none', p: conf } : null) : clears
-  Object.assign(i, { guess, guessConf: Math.round(conf * 1000) / 1000, alts, by, placed: true, disagree: !agree })
-  i.offtopic = guess === 'none' && conf >= FILE_AT && c === 'none'
-  i.filed = !i.offtopic && !!top && agree && !i.mixed
-  i.branch = i.filed ? top.id : guess
-  i.conf = Math.round((i.filed ? top.p : conf) * 1000) / 1000
-  i.finer = i.filed && top.id !== guess ? { branch: guess, p: i.guessConf } : null
+// What else each item touches, for items read before links existed (new reads get them from the first pass).
+async function linkItems(id, ids, model) {
+  const s = load(id), lib = LIBS.get(id)
+  if (!ids.length) return
+  s.job.stage = `Finding what ${ids.length} item(s) also touch`
+  const batches = []
+  for (let b = 0; b < ids.length; b += LINK_BATCH) batches.push(ids.slice(b, b + LINK_BATCH))
+  s.job.total += batches.length
+  await pool(batches, CONCURRENCY, async batch => {
+    if (s.job.stop) return
+    const index = flat(s.tree.branches)
+    try {
+      const res = await callModel({ model, system: SYSTEM, kind: 'links', schema: SCHEMAS.links, prompt: linksPrompt({ library: lib, tree: s.tree.branches, items: batch.map(x => s.items[x]) }) })
+      s.cost += res.cost
+      for (const r of res.out.items) { const i = s.items[r.id]; if (i) i.also = r.also.filter(x => index.has(x) && x !== i.claudeBranch).slice(0, 3) }
+      for (const x of batch) s.items[x].also ||= []
+    } catch (e) { note(id, `Links failed for ${batch.length} item(s): ${String(e.message).slice(0, 100)}`) }
+    s.job.done++
+  })
+  save(id)
 }
 
 // ---------- threads: the same topic across every call, with where it stands ----------
@@ -461,10 +546,11 @@ export function answer(id, { qid, text, branch, newBranch, skip, items }) {
   const s = load(id), index = flat(s.tree.branches)
   const at = new Date().toISOString()
   if (skip) {
-    if (items?.length) for (const x of items) s.snoozed[(qid.startsWith('f:') ? 'f:' : 'i:') + x] = at
+    if (items?.length) for (const x of items) s.snoozed[(qid === 'spot' ? 's:' : 'i:') + x] = at
     else s.snoozed[qid] = at
     save(id); return { ok: true }
   }
+  if (qid === 'spot') return spotAnswer(id, arguments[1].checks || [])
   const [kind, key] = [qid.slice(0, 1), qid.slice(2)]
   if (kind === 'b') return sharpen(id, key, arguments[1])
   if (kind === 't') {
@@ -487,13 +573,33 @@ export function answer(id, { qid, text, branch, newBranch, skip, items }) {
       s.treeChangedAt = at
     }
     if (!target || (target !== 'none' && !flat(s.tree.branches).has(target))) throw new Error('Pick a branch')
-    Object.assign(i, { branch: target, conf: 1, by: 'owner', filed: target !== 'none', offtopic: target === 'none', disagree: false, finer: null })
+    Object.assign(i, { branch: target, conf: 1, by: 'owner', rule: 'owner', filed: target !== 'none', offtopic: target === 'none', links: (i.links || []).filter(l => l !== target) })
     s.corrections.push({ at, text: i.text, branch: target })
     s.answers.push({ at, item: key, q: i.text, a: pathName(flat(s.tree.branches), target) })
   }
   save(id)
   return { ok: true }
 }
+// A spot check: each item is right where it is, or moves where you say. Either way it is now yours, it teaches
+// the filing, and it counts toward how often the rule that placed it is right.
+function spotAnswer(id, checks) {
+  const s = load(id), index = flat(s.tree.branches), at = new Date().toISOString()
+  let right = 0, moved = 0
+  for (const ck of checks) {
+    const i = s.items[ck.id]
+    const to = ck.ok ? i?.branch : ck.branch
+    if (!i || i.by === 'owner' || !to || (to !== 'none' && !index.has(to))) continue
+    i.check = { at, rule: i.rule, ok: !!ck.ok, was: i.branch }
+    Object.assign(i, { branch: to, conf: 1, by: 'owner', rule: 'owner', filed: to !== 'none', offtopic: to === 'none', links: (i.links || []).filter(l => l !== to) })
+    s.corrections.push({ at, text: i.text, branch: to })
+    ck.ok ? right++ : moved++
+  }
+  s.answers.push({ at, q: `Spot check of ${right + moved} filing(s)`, a: `${right} right, ${moved} moved` })
+  applyTrust(s)
+  save(id)
+  return { right, moved, ...counts(s) }
+}
+
 // Merge two branches into one, or write how they differ into both descriptions. Then "Update" files everything again.
 function sharpen(id, key, { merge, describe }) {
   const s = load(id), index = flat(s.tree.branches), at = new Date().toISOString()
@@ -509,7 +615,8 @@ function sharpen(id, key, { merge, describe }) {
     const move = x => x === gone ? keep : x
     for (const i of Object.values(s.items)) {
       i.branch = move(i.branch); i.guess = move(i.guess); i.claudeBranch = move(i.claudeBranch)
-      if (i.finer) i.finer.branch = move(i.finer.branch)
+      if (i.also) i.also = [...new Set(i.also.map(move))]
+      if (i.links) i.links = [...new Set(i.links.map(move))].filter(l => l !== i.branch)
       i.alts = (i.alts || []).map(x => ({ ...x, branch: move(x.branch) }))
     }
     for (const t of Object.values(s.threads)) t.branch = move(t.branch)
@@ -539,7 +646,7 @@ const ctxKey = s => `${s.treeChangedAt || ''}|${s.corrections.length}`
 const retry = s => {
   const index = flat(s.tree.branches), ctx = ctxKey(s)
   return Object.values(s.items).filter(i => i.by !== 'owner' && i.placed &&
-    ((!i.filed && i.ctx !== ctx) || !index.has(i.branch) || (i.finer && !index.has(i.finer.branch)))).map(i => i.id)
+    ((!i.filed && i.ctx !== ctx) || (i.branch !== 'none' && !index.has(i.branch)) || (i.guess && i.guess !== 'none' && !index.has(i.guess)))).map(i => i.id)
 }
 
 // File again what is still waiting, e.g. after the tree changed.
@@ -549,23 +656,8 @@ export async function refile(id) {
   s.tree = (() => { try { return JSON.parse(readFileSync(join(LIBS.get(id).dir, 'tree.json'), 'utf8')) } catch { return s.tree } })()
   const ids = retry(s)
   s.job = { running: true, stage: 'Filing again', done: 0, total: 0, started: new Date().toISOString(), log: [], model: '' }
-  try { await placeItems(id, ids); note(id, `Filed ${ids.length} item(s) again: ${counts(s).filed} filed, ${counts(s).review} to check`) }
+  try { resettle(s); await placeItems(id, ids); note(id, `Placed ${ids.length} item(s) again: ${counts(s).filed} filed, ${counts(s).guessed} best guesses`) }
   finally { s.job.running = false; s.job.stage = 'Done'; save(id, true) }
-  return counts(s)
-}
-
-// Confirm many at once: every item in the list goes where it was guessed.
-export function confirmAll(id, { items }) {
-  const s = load(id), at = new Date().toISOString()
-  for (const key of items || []) {
-    const i = s.items[key]
-    if (!i || !(needsReview(i) || i.finer)) continue
-    const branch = i.finer ? i.finer.branch : i.branch
-    Object.assign(i, { branch, conf: 1, by: 'owner', filed: branch !== 'none', offtopic: branch === 'none', disagree: false, finer: null })
-    s.corrections.push({ at, text: i.text, branch })
-  }
-  s.answers.push({ at, q: `${(items || []).length} items confirmed together`, a: 'as guessed' })
-  save(id)
   return counts(s)
 }
 
@@ -573,12 +665,14 @@ export function confirmAll(id, { items }) {
 export async function refresh(id, { model } = {}) {
   const s = load(id)
   if (s.job?.running) throw new Error('Already processing')
-  s.job = { running: true, stage: 'Filing again', done: 0, total: 0, started: new Date().toISOString(), log: [], model: resolveModel(model || 'claude-sonnet-5-5') }
+  s.job = { running: true, stage: 'Filing again', done: 0, total: 0, started: new Date().toISOString(), log: [], model: model ? resolveModel(model) : readModel(id) }
   save(id)
   ;(async () => {
+    await linkItems(id, Object.values(s.items).filter(i => !i.dup && !i.also).map(i => i.id), s.job.model)
+    resettle(s)
     await placeItems(id, retry(s))
-    note(id, `Filed again: ${counts(s).filed} filed, ${counts(s).review} to check`)
-    await rebuildThreads(id, s.job.model, changedScopes(s, flat(s.tree.branches)))
+    note(id, `Filed again: ${counts(s).filed} filed, ${counts(s).guessed} best guesses, ${counts(s).links} links`)
+    await rebuildThreads(id, topicModel(id), changedScopes(s, flat(s.tree.branches)))
     await weighQuestions(id)
     s.refreshedAt = new Date().toISOString()
   })().catch(e => note(id, `Stopped: ${e.message}`)).finally(() => { s.job.running = false; s.job.stage = 'Done'; save(id, true) })

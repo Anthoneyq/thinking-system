@@ -106,7 +106,7 @@ function Home() {
             {libs.map(l => (
               <li key={l.id}><a href={'/library/' + l.id} onClick={e => { e.preventDefault(); go('/library/' + l.id) }}>
                 <span className="r-title">{l.name}</span>
-                {l.review + l.open > 0 && <span className="pill s-waiting">{l.review + l.open} need you</span>}
+                {l.open > 0 && <span className="pill s-waiting">{l.open} open topics</span>}
                 <span className="sub">{l.calls} calls · {l.items} items · {l.threads} topics</span>
               </a></li>
             ))}

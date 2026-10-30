@@ -16,13 +16,21 @@ export function writeMarkdown(lib, s, v) {
     `# ${lib.name}: conversation index`,
     '',
     `Built by the Thinking System (Conversations mode). Open the live map: http://localhost:4477/library/${lib.id}`,
-    `Updated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. ${c.calls} calls, ${c.items} items, ${c.filed} filed, ${c.review} to check, ${c.threads} topics (${c.open} not settled).`,
-    `Items file on their own at ${Math.round(v.fileAt * 100)}% confidence or higher; below that they wait for a person. Data: \`library.json\`, branches: \`tree.json\`.`,
+    `Updated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. ${c.calls} calls, ${c.items} items: ${c.filed} filed, ${c.guessed} best guesses, ${c.links} links between branches. ${c.threads} topics (${c.open} not settled).`,
+    `Every item has a home branch and may link to others it also touches. A home counts as filed when you confirmed it, or when the rule that placed it has been right at least ${Math.round(v.target * 100)}% of the time in your spot checks. Data: \`library.json\`, branches: \`tree.json\`.`,
+    '',
+    '## How sure the filing is',
+    '',
+    '| Rule | Items | Checked | Right | Files on its own |',
+    '|---|---|---|---|---|',
+    ...v.rules.map(r => `| ${r.label} | ${r.items} | ${r.checked} of ${r.need} | ${r.right == null ? '-' : Math.round(r.right * 100) + '%'} | ${r.trusted ? 'yes' : 'not yet'} |`),
     '',
     '## Needs you',
     '',
     ...v.questions.slice(0, 25).map((q, k) => q.kind === 'thread'
       ? `${k + 1}. **${q.q}** (${STATUS[q.status].toLowerCase()}, ${q.where})${q.ways?.length ? `\n   Ways it was talked about: ${q.ways.join(' / ')}` : ''}`
+      : q.kind === 'spot' ? `${k + 1}. **Spot check: are these in the right place?** ${q.items.length} items, ${q.left} checks left. Answer in the app.`
+      : q.kind === 'tree' ? `${k + 1}. **${q.q}**`
       : `${k + 1}. **Where does this belong?** "${q.q}" — best guess ${q.guessName} (${q.why}). From ${q.call ? s.calls[q.call]?.file : ''} ${q.at || ''}`),
     v.questions.length > 25 ? `\n…and ${v.questions.length - 25} more in the app.` : '',
     '',
@@ -30,6 +38,21 @@ export function writeMarkdown(lib, s, v) {
   if (s.crosslinks.length) {
     out.push('## Applies elsewhere (last cross-check)', '', ...(s.crosscheckSummary ? [s.crosscheckSummary, ''] : []))
     for (const l of s.crosslinks) out.push(`- **${l.fromName} → ${l.toName}** (${l.strength}): ${l.idea} First step: ${l.action}`)
+    out.push('')
+  }
+  // Which parts of the business keep coming up together: items that live in one branch and touch another.
+  const top = id => { let n = index.get(id); while (n?.parent && index.get(n.parent)?.parent) n = index.get(n.parent); return n }
+  const pairs = {}
+  for (const i of Object.values(s.items)) for (const l of i.links || []) {
+    const a = top(i.branch), b = top(l)
+    if (!a || !b || a.id === b.id) continue
+    const k = [a.id, b.id].sort().join('|')
+    ;(pairs[k] ||= []).push(i)
+  }
+  const strong = Object.entries(pairs).sort((x, y) => y[1].length - x[1].length).slice(0, 20)
+  if (strong.length) {
+    out.push('## How the parts connect', '', 'Branch pairs that share the most items (two levels down), with an example of each.', '')
+    for (const [k, list] of strong) { const [a, b] = k.split('|'); out.push(`- **${path(a)}** ↔ **${path(b)}**: ${list.length} items. e.g. ${list[0].text}`) }
     out.push('')
   }
   out.push('## By branch', '')

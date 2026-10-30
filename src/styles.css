@@ -395,6 +395,9 @@ li.red { color: var(--red); }
 .web-ring { fill: none; stroke: var(--line); stroke-dasharray: 2 6; }
 .web-spoke { stroke: var(--line); stroke-width: 1.5; }
 .web-thread { stroke: var(--line); }
+.web-link { fill: none; stroke: var(--accent); stroke-linecap: round; pointer-events: stroke; }
+.web-link:hover { opacity: 1 !important; }
+.line { display: inline-block; width: 16px; height: 3px; border-radius: 2px; background: var(--accent); margin-left: 8px; }
 .web-sat { fill: var(--line); }
 .web-sat.on { fill: var(--sub); }
 .web-sat.red { fill: var(--red); }
@@ -430,12 +433,9 @@ li.red { color: var(--red); }
 .sub-on { opacity: .7; font-size: 12.5px; }
 blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--line); color: var(--sub); font-size: 13.5px; }
 blockquote cite { display: block; font-style: normal; font-size: 12px; color: var(--faint); margin-top: 2px; }
-.lib-items, .lib-group, .lib-calls, .lib-qlist { list-style: none; margin: 8px 0; padding: 0; }
+.lib-items, .lib-spot, .lib-calls, .lib-qlist { list-style: none; margin: 8px 0; padding: 0; }
 .lib-items li, .lib-calls li { border-top: 1px solid var(--line-2); padding: 10px 0; }
 .lib-items p { margin: 4px 0; }
-.lib-group li { border-top: 1px solid var(--line-2); padding: 8px 0; }
-.lib-group label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
-.lib-group input { margin-top: 4px; }
 .lib-qlist li .ghost { white-space: normal; text-align: left; height: auto; color: var(--ink); width: 100%; justify-content: flex-start; }
 .lib-thread { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 8px 0; }
 .lib-thread-head { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 2px; width: 100%; }
@@ -462,3 +462,15 @@ blockquote cite { display: block; font-style: normal; font-size: 12px; color: va
   .lib-map { padding: 8px; }
   .lib-panel { padding: 12px 16px 40px; }
 }
+
+/* spot check */
+.lib-spot li { border-top: 1px solid var(--line-2); padding: 10px 0; }
+.lib-spot li p { margin: 0 0 4px; }
+.lib-spot li.off p { text-decoration: line-through; text-decoration-color: var(--red); }
+.lib-spot .lib-q-bar { margin-top: 6px; }
+.lib-spot-home { font-size: 13px; }
+.lib-rules { margin-top: 12px; font-size: 13px; }
+.lib-rules summary { cursor: pointer; color: var(--muted, inherit); }
+.lib-rules table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.lib-rules th, .lib-rules td { text-align: left; padding: 4px 6px; border-top: 1px solid var(--line-2); vertical-align: top; }
+@media (max-width: 520px) { .lib-rules th:nth-child(2), .lib-rules td:nth-child(2) { display: none; } }

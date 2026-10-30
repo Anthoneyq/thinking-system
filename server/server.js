@@ -45,7 +45,6 @@ const LIBRARY_ACTIONS = {
   crosscheck: (id, b) => library.crosscheck(id, b),
   stop: id => library.stop(id),
   refile: id => library.refile(id),
-  confirm: (id, b) => library.confirmAll(id, b),
   answer: (id, b) => library.answer(id, b),
   ask: (id, b) => library.ask(id, b.question, b),
 }

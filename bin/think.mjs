@@ -103,31 +103,39 @@ if (args[0] === 'library') {
       if (q.ways?.length) console.log(`  ways it was talked about:\n${q.ways.map(w => '    - ' + w).join('\n')}`)
       if (q.options?.length) console.log(`  options: ${q.options.join(' | ')}`)
       console.log(`Answer with: think library ${id} answer "..."  (or skip)`)
-    } else if (q.kind === 'group') {
-      console.log(`  ${q.q}\n${q.items.map(i => `    - ${i.text} (${Math.round(i.conf * 100)}%)`).join('\n')}`)
-      console.log(`Confirm all with: think library ${id} answer yes  (or file <branch-id>, or skip)`)
+    } else if (q.kind === 'spot') {
+      console.log(`  Spot check: ${q.q}\n${q.items.map((i, k) => `  ${k + 1}. ${i.text}\n     home: ${i.where}${i.links.length ? `; also touches ${i.links.map(l => l.name).join(', ')}` : ''}`).join('\n')}`)
+      console.log(`Answer with: think library ${id} answer yes  (all right), or: answer wrong 2=<branch-id> 5=none  (the rest are right), or skip`)
+    } else if (q.kind === 'tree') {
+      console.log(`  ${q.q}\n  e.g. ${q.examples.slice(0, 3).join('\n  e.g. ')}\nAnswer on ${page}`)
     } else {
       console.log(`  Where does this belong? "${q.q}"\n  best guess: ${q.guessName} (${q.why})${q.alts.length ? `\n  others: ${q.alts.map(a => `${a.branch} ${a.name}`).join('; ')}` : ''}`)
       console.log(`Answer with: think library ${id} answer yes | file <branch-id> | file none | skip`)
     }
   }
   if (cmd === 'status') {
-    console.log(`${v.name}: ${c.calls} calls (${c.newCalls} unread), ${c.items} items, ${c.filed} filed, ${c.review} to check, ${c.threads} topics (${c.open} not settled). $${c.cost.toFixed(2)} spent.`)
+    console.log(`${v.name}: ${c.calls} calls (${c.newCalls} unread), ${c.items} items: ${c.filed} filed, ${c.guessed} best guesses, ${c.links} links. ${c.threads} topics (${c.open} not settled). $${c.cost.toFixed(2)} spent.`)
+    console.log(`Filing rules: ${v.rules.map(r => `${r.rule} ${r.items} (${r.checked}/${r.need} checked${r.right == null ? '' : `, ${Math.round(r.right * 100)}% right`}${r.trusted ? ', files on its own' : ''})`).join('; ')}`)
     if (v.job?.running) console.log(`Working: ${v.job.stage} ${v.job.done}/${v.job.total}. ${v.job.log.at(-1)?.text || ''}`)
     console.log(`Record: ${v.dir}/INDEX.md\nMap: ${page}`)
   } else if (cmd === 'scan') { const r = await post('scan'); console.log(`${r.added} new call(s). ${r.newCalls} unread in all. Read them with: think library ${id} process`) }
   else if (cmd === 'process') { const only = rest.indexOf('--only') > 0 ? rest[rest.indexOf('--only') + 1] : undefined; await post('process', { only, model }); console.log(`Reading. Follow it on ${page} or with: think library ${id} status`) }
-  else if (cmd === 'refile') { const r = await post('refile'); console.log(`${r.filed} filed, ${r.review} to check.`) }
+  else if (cmd === 'refile') { const r = await post('refile'); console.log(`${r.filed} filed, ${r.guessed} best guesses.`) }
   else if (cmd === 'crosscheck') { await post('crosscheck', { model }); console.log(`Cross-checking on Opus. Results on ${page} (Applies elsewhere) and in INDEX.md.`) }
   else if (cmd === 'ask') { const r = await post('ask', { question: text }); console.log(r.answer); if (r.gaps?.length) console.log(`Not settled: ${r.gaps.join('; ')}`) }
   else if (cmd === 'next') show(v.questions.find(x => x.now) || v.questions[0])
   else if (['answer', 'file', 'skip'].includes(cmd)) {
     const q = v.questions.find(x => x.now) || v.questions[0]
     if (!q) { show(null); process.exit(0) }
-    if (cmd === 'skip') await post('answer', { qid: q.id, skip: true, items: q.items?.map(i => i.id) })
+    if (cmd === 'skip') await post('answer', { qid: q.id, skip: true, items: q.kind === 'spot' ? q.items.map(i => i.id) : undefined })
     else if (q.kind === 'thread') { if (!text) { console.error('Write the answer.'); process.exit(1) } await post('answer', { qid: q.id, text }) }
-    else if (cmd === 'file') { const ids = q.kind === 'group' ? q.items.map(i => i.id) : [q.item]; for (const x of ids) await post('answer', { qid: 'i:' + x, branch: text }) }
-    else if (q.kind === 'group') await post('confirm', { items: q.items.map(i => i.id) })
+    else if (q.kind === 'spot') {
+      const moves = Object.fromEntries([...text.matchAll(/(\d+)=(\S+)/g)].map(m => [q.items[m[1] - 1]?.id, m[2]]))
+      if (!/^yes\b/i.test(text) && !Object.keys(moves).length) { console.error('Say yes, or wrong 2=<branch-id> ...'); process.exit(1) }
+      await post('answer', { qid: 'spot', checks: q.items.map(i => moves[i.id] ? { id: i.id, ok: false, branch: moves[i.id] } : { id: i.id, ok: true }) })
+    }
+    else if (q.kind === 'tree') { console.error(`Answer tree overlaps on ${page}`); process.exit(1) }
+    else if (cmd === 'file') await post('answer', { qid: q.id, branch: text })
     else await post('answer', { qid: q.id, branch: q.guess })
     console.log('Saved.')
     const qs = (await get(`/api/library/${id}`)).questions

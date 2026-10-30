@@ -22,10 +22,12 @@ export const SCHEMAS = {
       terms: arr(obj({ term: str, sense: str })),
       mixed: str,
       branch: str,
+      also: arr(str),
       confidence: num,
       new_branch: str,
     })),
   }),
+  links: obj({ items: arr(obj({ id: str, also: arr(str) })) }),
   threads: obj({
     threads: arr(obj({
       id: str,
@@ -76,11 +78,23 @@ For each item:
 - "terms": the 1 to 4 subject words someone would search for, each with the sense meant here (e.g. {"term":"ceiling","sense":"cost cap on a budget"} vs {"term":"ceiling","sense":"part of the building"}).
 - "mixed": only if this item itself uses one word in two senses, so it could be filed in two places, say which ("ceiling: damage and price"); talking about the word itself does not count. Else "".
 - "branch": the tree id it belongs to, "none" if it fits nowhere; "confidence" 0 to 1 that the branch is right.
+- "also": other tree ids this item clearly also touches, because it is about both (a fee for website work touches pricing and the website). At most 3; [] when it sits in one place. Not branches you are merely unsure between.
 - "new_branch": if no branch fits well, a short name for the branch that should exist; else "".
 - "summary": two or three lines on what this ${parts > 1 ? 'part of the ' : ''}conversation covered.
 
 Transcript:
 ${text}`
+}
+
+export function linksPrompt({ library, tree, items }) {
+  return `Business: ${library.name}
+
+The business tree:
+${outline(tree)}
+Each item below already has a home branch. List the other branches it clearly also touches, because it is about both, so someone working in that branch should find it too (a fee for website work touches pricing and the website). At most 3, by id; [] when it sits in one place. Not branches you are merely unsure between. Return every item id.
+
+Items (id | home | text | context):
+${items.map(i => `${i.id} | ${i.claudeBranch} | ${i.text} | ${i.context}`).join('\n')}`
 }
 
 export function threadsPrompt({ library, path, items, existing }) {

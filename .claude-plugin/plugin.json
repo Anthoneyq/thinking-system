@@ -1,6 +1,6 @@
 {
   "name": "thinking-system",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Think anything through on a live, branching map: it frames your thought, branches out, comes back together, restates the question, asks you what matters, and hands back a decision with one next action.",
   "author": { "name": "Anthoney Q" }
 }
