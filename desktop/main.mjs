@@ -70,7 +70,7 @@ function signOut() { rmSync(TOKEN, { force: true }); app.relaunch(); app.exit(0)
 const freePort = () => new Promise(res => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)) }) })
 
 async function start() {
-  let token = saved()
+  let token = process.env.THINK_GITHUB_TOKEN || saved()
   let login
   for (;;) {
     if (!token) { token = await signIn(); keep(token) }
@@ -93,7 +93,7 @@ async function start() {
   const config = join(DATA, 'config.json')
   writeFileSync(config, JSON.stringify({
     runsDir: join(DATA, 'runs'), rulesFile: join(DATA, 'rules.md'),
-    libraries: [{ id: TEAM.library, name: TEAM.libraryName, sources: [], dir: join(DATA, 'record'), sync: { repo: TEAM.repo, role: 'member', me: login } }],
+    libraries: [{ id: TEAM.library, name: TEAM.libraryName, sources: [], dir: join(DATA, 'record'), sync: { repo: TEAM.repo, role: 'member', me: process.env.THINK_ME || login } }],
   }, null, 2))
   Object.assign(process.env, { THINK_CONFIG: config, THINK_PORT: String(port), THINK_GITHUB_TOKEN: token })
   await import(pathToFileURL(join(HERE, 'bundle', 'app', 'server.mjs')).href)
