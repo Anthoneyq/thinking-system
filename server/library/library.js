@@ -243,7 +243,7 @@ export function view(id) {
     tree: s.tree, byBranch, counts: counts(s), calls: Object.values(s.calls).sort((a, b) => b.date.localeCompare(a.date)),
     items: s.items, threads: s.threads, crosslinks: s.crosslinks, answers: s.answers.slice(-50), questions: qs,
     job: s.job, version: s.version, estimate: estimate(s, id),
-    me: me(id), member: lib.sync?.role === 'member', sync: lib.sync ? { repo: lib.sync.repo, role: lib.sync.role, ...s.syncState, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
+    me: me(id), member: lib.sync?.role === 'member', sync: lib.sync ? { repo: lib.sync.repo, role: lib.sync.role, last: s.syncState?.last, error: s.syncState?.error, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
     log: (s.log || []).slice(-300).reverse(),
     pending: s.corrections.filter(c => c.at > (s.refreshedAt || '')).length + (s.treeChangedAt > (s.refreshedAt || '') ? 1 : 0),
   }

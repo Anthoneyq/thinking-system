@@ -8,6 +8,7 @@ import { createServer } from 'node:net'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const TEAM = JSON.parse(readFileSync(join(HERE, 'team.json'), 'utf8'))
+if (process.env.ELECTRON_USER_DATA) app.setPath('userData', process.env.ELECTRON_USER_DATA)
 const DATA = app.getPath('userData')
 const TOKEN = join(DATA, 'github-key')
 let win, serverPort

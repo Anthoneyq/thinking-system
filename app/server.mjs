@@ -5236,7 +5236,7 @@ function view(id) {
     estimate: estimate(s, id),
     me: me(id),
     member: lib2.sync?.role === "member",
-    sync: lib2.sync ? { repo: lib2.sync.repo, role: lib2.sync.role, ...s.syncState, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
+    sync: lib2.sync ? { repo: lib2.sync.repo, role: lib2.sync.role, last: s.syncState?.last, error: s.syncState?.error, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
     log: (s.log || []).slice(-300).reverse(),
     pending: s.corrections.filter((c) => c.at > (s.refreshedAt || "")).length + (s.treeChangedAt > (s.refreshedAt || "") ? 1 : 0)
   };

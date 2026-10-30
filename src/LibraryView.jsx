@@ -100,7 +100,7 @@ function Sync({ v, busy, act }) {
   const y = v.sync
   return <>
     <span className={'lib-sync sub' + (y.error ? ' err' : '')} title={y.error || `Shared through ${y.repo}`}>
-      {y.error ? 'Offline: changes wait here' : y.waiting ? `${y.waiting} waiting to send` : y.last ? `Synced ${y.last.slice(11, 16)}` : 'Not synced yet'} · {v.me}
+      {y.error ? 'Offline: changes wait here' : y.waiting ? `${y.waiting} waiting to send` : y.last ? `Synced ${new Date(y.last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced yet'} · {v.me}
     </span>
     <button className="ghost" disabled={!!busy} onClick={() => act('sync')}>Sync now</button>
     <button className="btn" disabled={!!busy} onClick={() => file.current.click()} title="Scrubbed transcripts (.vtt, .docx, .md, .txt). They are read on the next update.">Add calls</button>
@@ -119,7 +119,7 @@ function Changes({ v }) {
       {!list.length && <p className="sub">No changes yet. Answers, topic and branch edits, and added calls show here with who made them.</p>}
       <ol className="lib-log-list">{list.map(c => (
         <li key={c.id}>
-          <div><b>{c.by}</b> <span className="sub">{c.at.slice(0, 16).replace('T', ' ')}</span>{c.error && <span className="tag red" title={c.error}>not applied</span>}</div>
+          <div><b>{c.by}</b> <span className="sub">{new Date(c.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>{c.error && <span className="tag red" title={c.error}>not applied</span>}</div>
           <p>{c.what || c.kind}</p>
           {(c.before || c.after) && <div className="lib-diff">{c.before && <del>{c.before}</del>}{c.after && <ins>{c.after}</ins>}</div>}
         </li>))}</ol>
