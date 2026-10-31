@@ -1,7 +1,7 @@
 {
   "name": "conversations-team-app",
   "productName": "Conversations",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A team copy of a Conversations library, synced through a private GitHub repo",
   "author": "Anthoney Q",
   "type": "module",

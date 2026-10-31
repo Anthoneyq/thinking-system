@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, go } from './api.js'
 import Theme from './Theme.jsx'
+import { questionsInBranch } from '../shared/library-questions.js'
 
 // Conversations mode: the business tree as a spider web you can step into, and one list of what it still needs from you.
 const STATUS = { unsettled: 'Never settled', open: 'Open', assumed: 'Assumed', decided: 'Decided', done: 'Done' }
@@ -27,7 +28,7 @@ export default function LibraryView({ id }) {
   const [v, err, reload] = useLibrary(id)
   const [focus, setFocusRaw] = useState(null)
   const [selected, setSelected] = useState(null)
-  const setFocus = f => { setFocusRaw(f); setSelected(null) }
+  const setFocus = f => { setFocusRaw(f); setSelected(null); setTab('needs') }
   const [tab, setTab] = useState('needs')
   const [link, setLink] = useState(null)
   const [busy, setBusy] = useState('')
@@ -47,7 +48,10 @@ export default function LibraryView({ id }) {
   const running = v.job?.running
   const c = v.counts
   // A branch with parts opens as its own web; one without parts is selected in place and shown in the panel.
-  const pick = bid => { const n = index.get(bid); if (n?.children?.length) setFocus(bid); else { setFocusRaw(n ? n.parent : null); setSelected(bid) } setTab('branch') }
+  const pick = bid => { const n = index.get(bid); if (n?.children?.length) setFocus(bid); else { setFocusRaw(n ? n.parent : null); setSelected(bid) } setTab('needs') }
+
+  const scope = selected || focus
+  const scopedQuestions = questionsInBranch(v.questions, v.threads, index, scope)
 
   return (
     <main className="lib">
@@ -78,10 +82,10 @@ export default function LibraryView({ id }) {
         </section>
         <aside className="lib-panel">
           <div className="seg lib-tabs" role="tablist">
-            {[['needs', `Needs you${v.questions.length ? ` (${v.questions.filter(q => q.now).length || v.questions.length})` : ''}`], ['branch', 'Branch'], ...(link ? [['link', 'Connection']] : []), ['cats', `Categories${v.proposals?.length ? ` (${v.proposals.length} proposed)` : ''}`], ['find', 'Find'], ['links', 'Applies elsewhere'], ['calls', 'Transcripts'], ...(v.sync || v.log?.length ? [['changes', 'Changes']] : [])].map(([k, label]) =>
+            {[['needs', `Needs you${scopedQuestions.length ? ` (${scopedQuestions.length})` : ''}`], ['branch', 'Branch'], ...(link ? [['link', 'Connection']] : []), ['cats', `Categories${v.proposals?.length ? ` (${v.proposals.length} proposed)` : ''}`], ['find', 'Find'], ['links', 'Applies elsewhere'], ['calls', 'Transcripts'], ...(v.sync || v.log?.length ? [['changes', 'Changes']] : [])].map(([k, label]) =>
               <button key={k} role="tab" aria-checked={tab === k} onClick={() => setTab(k)}>{label}</button>)}
           </div>
-          {tab === 'needs' && <Needs v={v} index={index} id={id} reload={reload} onPlace={pick} />}
+          {tab === 'needs' && <Needs key={scope || 'all'} v={v} questions={scopedQuestions} scope={scope} onAll={() => setFocus(null)} index={index} id={id} reload={reload} onPlace={pick} />}
           {tab === 'branch' && <Branch v={v} index={index} focus={selected || focus} setFocus={pick} edit={body => act('change', body)} />}
           {tab === 'find' && <Find v={v} id={id} index={index} />}
           {tab === 'links' && <Links v={v} running={running} onRun={() => act('crosscheck')} />}
@@ -326,42 +330,53 @@ function WebList({ v, index, focus, setFocus, onPick }) {
 const claimed = new Map()
 
 // One question at a time: the system says what it still needs, you answer, the next one comes.
-function Needs({ v, index, id, reload, onPlace }) {
+function Needs({ v, questions, scope, onAll, index, id, reload, onPlace }) {
   const [k, setK] = useState(0)
   const [all, setAll] = useState(false)
   const [later, setLater] = useState(false)
-  const nowCount = v.questions.filter(q => q.now).length
-  const qs = later || !nowCount ? v.questions.filter(q => !q.now || !nowCount) : v.questions.filter(q => q.now)
-  if (!v.questions.length) return <div className="lib-done"><h3>Nothing needs you.</h3><p className="sub">Every topic is settled and every item is filed. New calls bring new questions.</p></div>
+  const nowCount = questions.filter(q => q.now).length
+  const qs = questions.filter(q => later ? !q.now : q.now)
   const q = qs[Math.min(k, qs.length - 1)] || {}
-  const send = async body => { await api(`library/${id}/answer`, { qid: q.id, ...body }); await reload() }
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const send = async body => {
+    setBusy(true); setError('')
+    try { await api(`library/${id}/answer`, { qid: q.id, ...body }); await reload() }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
   // Opening a question tells the team you're on it, so nobody else answers it at the same time.
   useEffect(() => {
     if (!v.sync || !q.id || all) return
-    const last = claimed.get(q.id)
+    const last = claimed.get(`${id}:${q.id}`)
     if (last && Date.now() - last < 10 * 60000) return
-    claimed.set(q.id, Date.now())
+    claimed.set(`${id}:${q.id}`, Date.now())
     api(`library/${id}/change`, { kind: 'claim', qid: q.id }).catch(() => {})
   }, [q.id, all])
   return (
     <div className="lib-needs">
+      <div className="lib-needs-bar"><b>{scope ? index.get(scope)?.name : 'All questions'}</b>{scope && <button className="ghost" onClick={onAll}>All questions</button>}</div>
+      {scope && <p className="sub">Questions in this branch and its parts.</p>}
+      {error && <p role="alert">{error}</p>}
       <div className="seg lib-now" role="radiogroup">
         <button role="radio" aria-checked={!later} onClick={() => { setLater(false); setK(0) }} title="Never settled, the spot check, overlaps in the tree, and the questions Jev says change the most">Now ({nowCount})</button>
-        <button role="radio" aria-checked={later} onClick={() => { setLater(true); setK(0) }}>Later ({v.questions.length - nowCount})</button>
+        <button role="radio" aria-checked={later} onClick={() => { setLater(true); setK(0) }}>Later ({questions.length - nowCount})</button>
       </div>
-      {!qs.length ? <p className="sub">Nothing here.</p> : <>
-      {!all && q.claimedBy && <p className="lib-claim">{q.claimedBy} has this one open. <button className="ghost" onClick={() => setK(k + 1)}>Next question</button></p>}
+      {!qs.length ? <p className="sub">{later ? 'Nothing waiting for later here.' : 'Nothing needs you now here. Check Later or choose another bubble.'}</p> : <>
+      {!all && q.claimedBy && <p className="lib-claim">{q.claimedBy} has this one open. <button className="ghost" onClick={() => setK((k + 1) % qs.length)}>Next question</button></p>}
       <div className="lib-needs-bar">
         <span className="sub">{qs.length} left{all ? '' : `, showing ${Math.min(k, qs.length - 1) + 1}`}</span>
         <button className="ghost" onClick={() => setAll(!all)}>{all ? 'One at a time' : 'See the list'}</button>
       </div>
+      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      {q.skipped && <p className="sub">Skipped for now — still unanswered.</p>}
       {all
         ? <ol className="lib-qlist">{qs.map((x, j) => <li key={x.id}><button className="ghost" onClick={() => { setK(j); setAll(false) }}>
             <span className={'tag' + (x.kind !== 'thread' ? ' dashed' : x.status === 'unsettled' ? ' red' : '')}>{x.kind === 'thread' ? STATUS[x.status] : x.kind === 'spot' ? `Spot check ${x.items.length}` : x.kind === 'tree' ? 'Tree' : 'Where?'}</span>{x.q}{x.claimedBy && <span className="sub"> · {x.claimedBy} has it open</span>}</button></li>)}</ol>
         : q.kind === 'thread' ? <ThreadQ key={q.id} q={q} v={v} send={send} skip={() => send({ skip: true })} />
-        : q.kind === 'spot' ? <SpotQ key={q.items.map(i => i.id).join()} q={q} id={id} index={index} reload={reload} target={v.target} />
+        : q.kind === 'spot' ? <SpotQ key={q.id} q={q} id={id} index={index} reload={reload} target={v.target} />
         : q.kind === 'tree' ? <TreeQ key={q.id} q={q} send={send} skip={() => send({ skip: true })} />
         : <PlaceQ key={q.id} q={q} v={v} index={index} send={send} skip={() => send({ skip: true })} onPlace={onPlace} />}
+      </fieldset>
       </>}
     </div>
   )
@@ -421,13 +436,16 @@ function SpotQ({ q, id, index, reload, target }) {
   const [busy, setBusy] = useState(false)
   const options = [...index.values()].map(n => ({ id: n.id, label: `${'  '.repeat(n.depth)}${n.name}` }))
   const mark = (x, b) => setWrong(w => { const n = { ...w }; b === undefined ? delete n[x] : (n[x] = b); return n })
-  const moved = Object.keys(wrong).length
-  const run = async body => { setBusy(true); try { await api(`library/${id}/answer`, body); await reload() } finally { setBusy(false) } }
+  const moved = q.items.filter(i => i.id in wrong).length
+  const [error, setError] = useState('')
+  const run = async body => { setBusy(true); setError(''); try { await api(`library/${id}/answer`, body); await reload() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   return (
     <div className="lib-q">
       <span className="tag">Spot check</span><span className="sub">Measures how often filing is right, so it can file on its own</span>
       <h3>{q.q}</h3>
       <p className="sub">Each one is right unless you mark it. Right means the home fits; the links are what else it touches.</p>
+      {error && <p role="alert">{error}</p>}
+      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <ol className="lib-spot">
         {q.items.map(i => (
           <li key={i.id} className={i.id in wrong ? 'off' : ''}>
@@ -437,16 +455,18 @@ function SpotQ({ q, id, index, reload, target }) {
               <button className={'btn' + (i.id in wrong ? '' : ' on')} onClick={() => mark(i.id)}>Right</button>
               <button className={'btn' + (i.id in wrong ? ' on' : '')} onClick={() => mark(i.id, wrong[i.id] ?? '')}>Wrong</button>
               {i.id in wrong && <select value={wrong[i.id]} onChange={e => mark(i.id, e.target.value)}><option value="">Where does it belong?</option><option value="none">Not this business</option>{options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select>}
+              <button className="ghost" onClick={() => run({ qid: 'spot', skip: true, items: [i.id] })}>Skip for now</button>
               <span className="sub">{i.file}{i.at ? ' ' + i.at : ''}</span>
             </div>
           </li>
         ))}
       </ol>
       <div className="lib-q-bar">
-        <button className="primary" disabled={busy || Object.values(wrong).some(b => !b)} onClick={() => run({ qid: 'spot', checks: q.items.map(i => i.id in wrong ? { id: i.id, ok: false, branch: wrong[i.id] } : { id: i.id, ok: true }) })}>
+        <button className="primary" disabled={busy || q.items.some(i => i.id in wrong && !wrong[i.id])} onClick={() => run({ qid: 'spot', checks: q.items.map(i => i.id in wrong ? { id: i.id, ok: false, branch: wrong[i.id] } : { id: i.id, ok: true }) })}>
           Save: {q.items.length - moved} right{moved ? `, ${moved} moved` : ''}</button>
-        <button className="ghost" disabled={busy} onClick={() => run({ qid: 'spot', skip: true, items: q.items.map(i => i.id) })}>Different sample</button>
+        <button className="ghost" disabled={busy} onClick={() => run({ qid: 'spot', skip: true, items: q.items.map(i => i.id) })}>Skip this sample</button>
       </div>
+      </fieldset>
       <details className="lib-rules"><summary>How sure each rule is</summary>
         <table><thead><tr><th>Rule</th><th>Items</th><th>Checked</th><th>Right</th></tr></thead>
           <tbody>{q.rules.map(r => <tr key={r.rule}><td>{r.label}</td><td>{r.items}</td><td>{r.checked} of {r.need}</td><td>{r.right == null ? '-' : pct(r.right)}{r.trusted ? ' · files on its own' : ''}</td></tr>)}</tbody></table>

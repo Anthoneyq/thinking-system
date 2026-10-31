@@ -5010,6 +5010,12 @@ function writeMarkdown(lib2, s, v) {
   for (const call of v.calls) out.push(`- ${call.date} ${call.file}: ${call.status === "dup" ? `same as ${call.dupOf}` : call.status === "done" ? `${call.items} items. ${call.summary || ""}` : call.status}`);
   writeFileSync(join(lib2.dir, "INDEX.md"), out.join("\n") + "\n");
 }
+function questionBranches(q, threads) {
+  if (q.kind === "thread") return [threads[q.thread]?.branch].filter(Boolean);
+  if (q.kind === "tree") return [q.a.id, q.b.id];
+  if (q.kind === "place") return [q.guess];
+  return [...new Set((q.items || []).map((i) => i.branch))];
+}
 const bus = new EventEmitter();
 bus.setMaxListeners(100);
 const TARGET = 0.95;
@@ -5102,7 +5108,7 @@ const threadable = (i) => i.placed && !i.dup && i.branch !== "none";
 function questions(id) {
   const s = load(id), index = flat(s.tree.branches);
   const rank2 = { unsettled: 0, open: 2, assumed: 3 };
-  const fromThreads = Object.values(s.threads).filter((t) => rank2[t.status] !== void 0 && t.question?.q && !s.snoozed["t:" + t.id]).map((t) => ({
+  const fromThreads = Object.values(s.threads).filter((t) => rank2[t.status] !== void 0 && t.question?.q).map((t) => ({
     id: "t:" + t.id,
     kind: "thread",
     thread: t.id,
@@ -5117,9 +5123,9 @@ function questions(id) {
     order: rank2[t.status] - (t.weight ?? 0.5) - Math.min(t.items.length, 10) / 20,
     now: t.status === "unsettled" || (t.weight ?? 0.5) >= 0.8
   }));
-  const fromItems = Object.values(s.items).filter((i) => i.rule === "mixed" && i.by !== "owner" && !i.dup && !s.snoozed["i:" + i.id]).map((i) => placeQ(i, index));
-  const check = spotCheck(s, index);
-  return [...fromThreads, ...check ? [check] : [], ...fromItems, ...confusions(s, index)].sort((a, b) => a.order - b.order);
+  const fromItems = Object.values(s.items).filter((i) => i.rule === "mixed" && i.by !== "owner" && !i.dup).map((i) => placeQ(i, index));
+  const checks = [spotCheck(s, index), spotCheck(s, index, true)].filter(Boolean);
+  return [...fromThreads, ...checks, ...fromItems, ...confusions(s, index)].map((q) => s.snoozed[q.id] ? { ...q, now: false, skipped: true } : q).sort((a, b) => a.order - b.order);
 }
 function confusions(s, index) {
   const pairs = {};
@@ -5130,7 +5136,7 @@ function confusions(s, index) {
     const key = [g, other].sort().join("|");
     (pairs[key] ||= []).push(i);
   }
-  return Object.entries(pairs).filter(([k, list2]) => list2.length >= 5 && !s.resolvedPairs[k] && !s.snoozed["b:" + k]).sort((a, b) => b[1].length - a[1].length).slice(0, 8).map(([k, list2]) => {
+  return Object.entries(pairs).filter(([k, list2]) => list2.length >= 5 && !s.resolvedPairs[k]).sort((a, b) => b[1].length - a[1].length).slice(0, 8).map(([k, list2]) => {
     const [a, b] = k.split("|").map((x) => ({ id: x, name: pathName(index, x), desc: index.get(x).desc || "" }));
     return {
       id: "b:" + k,
@@ -5236,25 +5242,26 @@ const hash = (x) => {
   for (const ch of x) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
   return h >>> 0;
 };
-function spotCheck(s, index) {
+function spotCheck(s, index, deferred = false) {
   const st = ruleStats(s);
   const pools = Object.values(st).filter((x) => x.checked < x.need).sort((a, b) => b.items - a.items).map((x) => ({
     x,
-    list: Object.values(s.items).filter((i) => i.rule === x.rule && i.by !== "owner" && !i.dup && !s.snoozed["s:" + i.id]).sort((a, b) => hash(a.id) - hash(b.id)).slice(0, x.need - x.checked)
+    list: Object.values(s.items).filter((i) => i.rule === x.rule && i.by !== "owner" && !i.dup && !!s.snoozed["s:" + i.id] === deferred).sort((a, b) => hash(a.id) - hash(b.id)).slice(0, x.need - x.checked)
   })).filter((p) => p.list.length);
   if (!pools.length) return null;
   const pick2 = [];
   for (let k = 0; pick2.length < SPOT && pools.some((p) => p.list[k]); k++) for (const p of pools) if (p.list[k] && pick2.length < SPOT) pick2.push(p.list[k]);
   const left = pools.reduce((a, p) => a + p.list.length, 0);
   return {
-    id: "spot",
+    id: deferred ? "spot:later" : "spot",
     kind: "spot",
-    q: `Are these in the right place? ${left} check${left > 1 ? "s" : ""} left before filing can be trusted on its own.`,
+    q: deferred ? "Skipped filings: are these in the right place?" : "Are these in the right place? Review the filings you know; skip the rest.",
     items: pick2.map((i) => ({ id: i.id, text: i.text, context: i.context, file: i.file, at: i.at, branch: i.branch, where: pathName(index, i.branch), rule: i.rule, links: (i.links || []).map((l) => ({ id: l, name: pathName(index, l) })) })),
     rules: Object.values(st).filter((x) => x.items),
     left,
     order: -5,
-    now: true
+    now: !deferred,
+    skipped: deferred
   };
 }
 function view(id) {
@@ -5276,9 +5283,13 @@ function view(id) {
     const c = s.claims?.[q.id];
     if (c && c.by !== me(id) && Date.parse(c.at) > fresh) q.claimedBy = c.by;
   }
-  for (const q of qs) for (const bid of q.kind === "thread" ? [s.threads[q.thread].branch] : q.kind === "tree" ? [q.a.id, q.b.id] : q.kind === "place" ? [q.guess] : []) {
-    bump(bid, "need");
-    if (q.now) bump(bid, "now");
+  for (const q of qs) {
+    const ancestors = new Set(questionBranches(q, s.threads).flatMap((bid) => pathOf(index, bid).map((n) => n.id)));
+    for (const bid of ancestors) {
+      const b = byBranch[bid] ||= { items: 0, filed: 0, need: 0, now: 0 };
+      b.need++;
+      if (q.now) b.now++;
+    }
   }
   return {
     id,

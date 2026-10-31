@@ -13,6 +13,7 @@ import { parseFile, chunks, KINDS } from './parse.js'
 import { aiStatus } from '../ai.js'
 import { SCHEMAS, SYSTEM, extractPrompt, linksPrompt, threadsPrompt, crosscheckPrompt, askPrompt, suggestPrompt } from './prompts.js'
 import { writeMarkdown } from './export.js'
+import { questionBranches } from '../../shared/library-questions.js'
 
 export const bus = new EventEmitter()
 bus.setMaxListeners(100)
@@ -98,7 +99,7 @@ export function questions(id) {
   const s = load(id), index = flat(s.tree.branches)
   const rank = { unsettled: 0, open: 2, assumed: 3 }
   const fromThreads = Object.values(s.threads)
-    .filter(t => rank[t.status] !== undefined && t.question?.q && !s.snoozed['t:' + t.id])
+    .filter(t => rank[t.status] !== undefined && t.question?.q)
     .map(t => ({
       id: 't:' + t.id, kind: 'thread', thread: t.id, status: t.status, q: t.question.q, why: t.question.why, options: t.question.options,
       where: pathName(index, t.branch), ways: t.ways, items: t.items.length, weight: t.weight ?? 0.5,
@@ -106,9 +107,11 @@ export function questions(id) {
       now: t.status === 'unsettled' || (t.weight ?? 0.5) >= 0.8,
     }))
   // Only items that use one word two ways are asked one by one: no rule can tell which sense was meant.
-  const fromItems = Object.values(s.items).filter(i => i.rule === 'mixed' && i.by !== 'owner' && !i.dup && !s.snoozed['i:' + i.id]).map(i => placeQ(i, index))
-  const check = spotCheck(s, index)
-  return [...fromThreads, ...(check ? [check] : []), ...fromItems, ...confusions(s, index)].sort((a, b) => a.order - b.order)
+  const fromItems = Object.values(s.items).filter(i => i.rule === 'mixed' && i.by !== 'owner' && !i.dup).map(i => placeQ(i, index))
+  const checks = [spotCheck(s, index), spotCheck(s, index, true)].filter(Boolean)
+  return [...fromThreads, ...checks, ...fromItems, ...confusions(s, index)]
+    .map(q => s.snoozed[q.id] ? { ...q, now: false, skipped: true } : q)
+    .sort((a, b) => a.order - b.order)
 }
 
 // Branches items keep landing between: the tree has a hole or an overlap there. Ask once; the answer sharpens every filing.
@@ -122,7 +125,7 @@ function confusions(s, index) {
     const key = [g, other].sort().join('|')
     ;(pairs[key] ||= []).push(i)
   }
-  return Object.entries(pairs).filter(([k, list]) => list.length >= 5 && !s.resolvedPairs[k] && !s.snoozed['b:' + k])
+  return Object.entries(pairs).filter(([k, list]) => list.length >= 5 && !s.resolvedPairs[k])
     .sort((a, b) => b[1].length - a[1].length).slice(0, 8)
     .map(([k, list]) => {
       const [a, b] = k.split('|').map(x => ({ id: x, name: pathName(index, x), desc: index.get(x).desc || '' }))
@@ -209,10 +212,10 @@ function resettle(s) {
 
 // A stable sample (same items until answered), taken across rules so each one gets measured.
 const hash = x => { let h = 2166136261; for (const ch of x) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0 }
-function spotCheck(s, index) {
+function spotCheck(s, index, deferred = false) {
   const st = ruleStats(s)
   const pools = Object.values(st).filter(x => x.checked < x.need).sort((a, b) => b.items - a.items).map(x => ({
-    x, list: Object.values(s.items).filter(i => i.rule === x.rule && i.by !== 'owner' && !i.dup && !s.snoozed['s:' + i.id])
+    x, list: Object.values(s.items).filter(i => i.rule === x.rule && i.by !== 'owner' && !i.dup && !!s.snoozed['s:' + i.id] === deferred)
       .sort((a, b) => hash(a.id) - hash(b.id)).slice(0, x.need - x.checked),
   })).filter(p => p.list.length)
   if (!pools.length) return null
@@ -220,9 +223,9 @@ function spotCheck(s, index) {
   for (let k = 0; pick.length < SPOT && pools.some(p => p.list[k]); k++) for (const p of pools) if (p.list[k] && pick.length < SPOT) pick.push(p.list[k])
   const left = pools.reduce((a, p) => a + p.list.length, 0)
   return {
-    id: 'spot', kind: 'spot', q: `Are these in the right place? ${left} check${left > 1 ? 's' : ''} left before filing can be trusted on its own.`,
+    id: deferred ? 'spot:later' : 'spot', kind: 'spot', q: deferred ? 'Skipped filings: are these in the right place?' : 'Are these in the right place? Review the filings you know; skip the rest.',
     items: pick.map(i => ({ id: i.id, text: i.text, context: i.context, file: i.file, at: i.at, branch: i.branch, where: pathName(index, i.branch), rule: i.rule, links: (i.links || []).map(l => ({ id: l, name: pathName(index, l) })) })),
-    rules: Object.values(st).filter(x => x.items), left, order: -5, now: true,
+    rules: Object.values(st).filter(x => x.items), left, order: -5, now: !deferred, skipped: deferred,
   }
 }
 
@@ -236,8 +239,12 @@ export function view(id) {
   // Someone else has this question open: it shows who, so two people don't answer it.
   const fresh = Date.now() - CLAIM_MIN * 60000
   for (const q of qs) { const c = s.claims?.[q.id]; if (c && c.by !== me(id) && Date.parse(c.at) > fresh) q.claimedBy = c.by }
-  for (const q of qs) for (const bid of q.kind === 'thread' ? [s.threads[q.thread].branch] : q.kind === 'tree' ? [q.a.id, q.b.id] : q.kind === 'place' ? [q.guess] : []) {
-    bump(bid, 'need'); if (q.now) bump(bid, 'now')
+  for (const q of qs) {
+    const ancestors = new Set(questionBranches(q, s.threads).flatMap(bid => pathOf(index, bid).map(n => n.id)))
+    for (const bid of ancestors) {
+      const b = (byBranch[bid] ||= { items: 0, filed: 0, need: 0, now: 0 })
+      b.need++; if (q.now) b.now++
+    }
   }
   return {
     id, name: lib.name, dir: lib.dir, sources: lib.sources, target: TARGET, jev: JEV_AVAILABLE, rules: Object.values(ruleStats(s)).filter(x => x.items),
