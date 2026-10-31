@@ -4817,7 +4817,8 @@ const SCHEMAS = {
     links: arr(obj({ from: str, to: str, idea: str, action: str, strength: oneOf("strong", "possible") }))
   }),
   ask: obj({ answer: str, cites: arr(str), gaps: arr(str) }),
-  suggest: obj({ categories: arr(obj({ name: str, parent: str, desc: str, why: str, items: arr(str) })) })
+  suggest: obj({ categories: arr(obj({ name: str, parent: str, desc: str, why: str, items: arr(str) })) }),
+  sortq: obj({ groups: arr(obj({ name: str, kind: oneOf("owner", "keep", "subject"), answers: arr(str), numbers: arr(num) })) })
 };
 const SYSTEM = `You read a business's recorded conversations and turn them into a clean, traceable record.
 Rules:
@@ -4922,6 +4923,23 @@ Only branches that at least 3 items need. Prefer a few clear branches over many 
 
 Items (id | filed at now | text):
 ${items.map((i) => `${i.id} | ${i.where} | ${i.text}`).join("\n")}`;
+}
+function sortPrompt({ library, questions: questions2 }) {
+  return `Business: ${library.name}
+
+Below are the open questions this team still has to answer. Sort them so someone can answer similar ones in one pass, on one screen. Put every question in exactly one group, using its number.
+
+Kinds of group:
+- "owner": the only thing to settle is who does it or who owns it. Name by the work, e.g. "Who owns the brand files".
+- "keep": the choice is whether to go ahead, drop it or leave it for later. Name by the area, e.g. "Keep or drop: AI tools".
+- "subject": anything else, grouped by shared subject so one person can settle the lot in one sitting, e.g. "Report cover layout".
+
+Sort by what the answer needs, not by shared words. A question about who is the audience is not an owner question. If a question fits owner or keep and a subject, owner or keep wins.
+"name": 2 to 6 plain words. "answers": for owner and keep groups, the 2 to 6 answers most of the group could share, in the words the options use (for example the role names as written); for subject groups, an empty list. "numbers": the question numbers.
+Aim for groups of 4 to 25; a question that fits nowhere still goes in the closest subject group.
+
+Questions (number | where | question | options):
+${questions2.map((q) => `${q.n} | ${q.where} | ${q.q} | ${(q.options || []).join(" / ")}`).join("\n")}`;
 }
 const STATUS = { unsettled: "Talked about, never settled", open: "Open", assumed: "Assumed, never confirmed", decided: "Decided", done: "Done" };
 const ORDER = ["unsettled", "open", "assumed", "decided", "done"];
@@ -5055,6 +5073,7 @@ function load(id) {
     version: 0
   };
   states.set(id, s);
+  if (keepAnswers(s)) setTimeout(() => save(id));
   return s;
 }
 let timers = {};
@@ -5116,6 +5135,7 @@ function questions(id) {
     q: t.question.q,
     why: t.question.why,
     options: t.question.options,
+    decided: t.decision || "",
     where: pathName(index, t.branch),
     ways: t.ways,
     items: t.items.length,
@@ -5316,6 +5336,7 @@ function view(id) {
     ai: lib2.sync?.role === "member" ? aiStatus() : { installed: true, loggedIn: true },
     proposals: proposals(s, index),
     sync: lib2.sync ? { repo: lib2.sync.repo, role: lib2.sync.role, last: s.syncState?.last, error: s.syncState?.error, waiting: (s.outbox || []).length + (s.outfiles || []).length } : null,
+    groups: s.questionGroups?.list || [],
     log: (s.log || []).slice(-300).reverse(),
     pending: s.corrections.filter((c) => c.at > (s.refreshedAt || "")).length + (s.treeChangedAt > (s.refreshedAt || "") ? 1 : 0)
   };
@@ -5466,6 +5487,7 @@ async function pipeline(id, model, only) {
   await placeItems(id, fresh.filter((i) => s.items[i]));
   await rebuildThreads(id, topicModel(id), changedScopes(s, index()));
   await weighQuestions(id);
+  await sortNew(id);
   note(id, `Done: ${fresh.length} new items, ${counts(s).filed} filed, ${counts(s).guessed} best guesses, ${counts(s).open} open threads. Spent $${s.cost.toFixed(2)} so far.`);
 }
 function glossary(s) {
@@ -5628,12 +5650,14 @@ async function rebuildThreads(id, model, scopes) {
           unconfirmed: its.filter((x) => !s.items[x].filed).length,
           first: s.items[its[0]].date,
           last: its.map((x) => s.items[x].date).sort().at(-1),
-          ...prev && t.status !== "decided" ? { status: "decided", decision: prev.decision, answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {},
-          ...prev && t.status === "decided" ? { answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {}
+          // A person's answer stands: a rewrite can update the summary, never the decision.
+          ...prev ? { status: t.status === "done" ? "done" : "decided", decision: prev.decision, answeredBy: prev.answeredBy, answeredAt: prev.answeredAt } : {}
         };
         const ed = edited.get(t.id);
         if (ed) Object.assign(s.threads[t.id], { title: ed.title, summary: ed.summary, decision: ed.decision, status: ed.status, editedBy: ed.editedBy, editedAt: ed.editedAt });
       }
+      for (const t of existing) if ((t.answeredBy || t.editedAt) && !s.threads[t.id]) s.threads[t.id] = { ...t, items: t.items.filter((x) => s.items[x]) };
+      keepAnswers(s);
       s.scopeSig[scope] = sig(items);
       s.job.done++;
       note(id, `${pathName(index, scope)}: ${res.out.threads.length} thread(s)`);
@@ -5643,6 +5667,16 @@ async function rebuildThreads(id, model, scopes) {
     }
   });
   save(id);
+}
+function keepAnswers(s) {
+  let restored = 0;
+  for (const a of s.answers) {
+    const t = a.thread && s.threads[a.thread];
+    if (!t || t.decision === a.a || t.answeredAt > a.at || t.editedAt > a.at) continue;
+    Object.assign(t, { status: t.status === "done" ? "done" : "decided", decision: a.a, answeredBy: a.by || t.answeredBy || "owner", answeredAt: a.at });
+    restored++;
+  }
+  return restored;
 }
 const sig = (items) => items.map((i) => i.id).sort().join(",");
 function changedScopes(s, index) {
@@ -5830,6 +5864,30 @@ async function suggestCategories(id) {
   const list2 = res.out.categories.filter((c) => c.name?.trim() && (!c.parent || index.has(c.parent))).map((c) => ({ ...c, items: c.items.filter((x) => s.items[x]) }));
   return change(id, { kind: "proposals", list: list2 });
 }
+async function sortQuestions(id, { onlyNew = false } = {}) {
+  const s = load(id), lib2 = LIBS.get(id);
+  const had = s.questionGroups?.list || [], known = new Set(had.flatMap((g) => g.ids));
+  const open = questions(id).filter((q) => q.kind === "thread");
+  const todo = onlyNew ? open.filter((q) => !known.has(q.id)) : open;
+  if (!todo.length) return { ok: true, sorted: 0 };
+  const res = await callModel({ model: readModel(id), system: SYSTEM, kind: "sortq", schema: SCHEMAS.sortq, prompt: sortPrompt({ library: lib2, questions: todo.map((q, n) => ({ n, q: q.q, options: q.options, where: q.where })) }) });
+  s.cost += res.cost;
+  const fresh = res.out.groups.map((g) => ({ name: g.name.trim(), kind: g.kind, answers: g.answers.map((a) => a.trim()).filter(Boolean).slice(0, 6), ids: [...new Set(g.numbers.map((n) => todo[n]?.id).filter(Boolean))] })).filter((g) => g.name && g.ids.length);
+  const list2 = onlyNew ? had.map((g) => ({ ...g })) : [];
+  for (const g of fresh) {
+    const same = list2.find((x) => x.name.toLowerCase() === g.name.toLowerCase());
+    if (same) same.ids = [.../* @__PURE__ */ new Set([...same.ids, ...g.ids])];
+    else list2.push(g);
+  }
+  return change(id, { kind: "groups", list: list2 });
+}
+async function sortNew(id) {
+  try {
+    await sortQuestions(id, { onlyNew: true });
+  } catch (e) {
+    note(id, `Could not sort new questions: ${String(e.message).slice(0, 120)}`);
+  }
+}
 let clock = null, actor = null;
 const now = () => clock || (/* @__PURE__ */ new Date()).toISOString();
 const me = (id) => LIBS.get(id)?.sync?.me || "owner";
@@ -5923,6 +5981,44 @@ const APPLY = {
     save(id);
     return { ok: true, id: bid };
   },
+  // Several answers saved as one change, keeping what each topic held so the whole batch can be undone.
+  answers(s, op, e, id) {
+    const done = [];
+    for (const a of op.answers || []) {
+      const t = s.threads[a.qid.slice(2)], text = a.text?.trim();
+      if (!t || !text) continue;
+      done.push({ thread: t.id, title: t.title, text, status: t.status, decision: t.decision ?? null, answeredBy: t.answeredBy ?? null, answeredAt: t.answeredAt ?? null });
+      answer(id, { qid: a.qid, text });
+    }
+    const replaced = done.filter((d) => d.decision);
+    Object.assign(e, { what: `Decided ${done.length} in one go${op.group ? `: ${op.group}` : ""}`, before: replaced.map((d) => `${d.title}: ${d.decision}`).join("\n"), after: done.map((d) => `${d.title}: ${d.text}`).join("\n"), undo: done });
+    return { ok: true, saved: done.length, batch: op.id };
+  },
+  undoAnswers(s, op, e, id) {
+    const batch = (s.log || []).find((x) => x.id === op.batch);
+    if (!batch?.undo) throw new Error("That batch is gone");
+    if (batch.undone) return { ok: true, restored: 0 };
+    let restored = 0;
+    for (const d of batch.undo) {
+      const t = s.threads[d.thread];
+      if (!t || t.answeredAt !== batch.at) continue;
+      t.status = d.status;
+      for (const k of ["decision", "answeredBy", "answeredAt"]) d[k] == null ? delete t[k] : t[k] = d[k];
+      restored++;
+    }
+    const titles = new Set(batch.undo.map((d) => d.thread));
+    s.answers = s.answers.filter((a) => !(a.at === batch.at && titles.has(a.thread)));
+    batch.undone = op.id;
+    Object.assign(e, { what: `Undid ${restored} answer${restored === 1 ? "" : "s"}: ${batch.what}` });
+    save(id);
+    return { ok: true, restored };
+  },
+  groups(s, op, e, id) {
+    s.questionGroups = { at: op.at, list: op.list };
+    e.what = `Sorted ${op.list.reduce((n, g) => n + g.ids.length, 0)} questions into ${op.list.length} groups`;
+    save(id);
+    return { ok: true, groups: op.list.length };
+  },
   transcript(s, op, e) {
     e.what = `Added transcript: ${op.file}`;
     return { ok: true };
@@ -6008,6 +6104,7 @@ async function refresh(id, { model } = {}) {
     note(id, `Filed again: ${counts(s).filed} filed, ${counts(s).guessed} best guesses, ${counts(s).links} links`);
     await rebuildThreads(id, topicModel(id), changedScopes(s, flat(s.tree.branches)));
     await weighQuestions(id);
+    await sortNew(id);
     s.refreshedAt = (/* @__PURE__ */ new Date()).toISOString();
   })().catch((e) => note(id, `Stopped: ${e.message}`)).finally(() => {
     s.job.running = false;
@@ -6296,6 +6393,7 @@ const LIBRARY_ACTIONS = {
   connect: () => connectAI(),
   aicheck: () => aiStatus(true),
   suggest: (id) => suggestCategories(id),
+  sortq: (id) => sortQuestions(id),
   ask: (id, b) => ask(id, b.question, b)
 };
 function sse(req, res, run2) {

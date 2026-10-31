@@ -47,6 +47,7 @@ export const SCHEMAS = {
   }),
   ask: obj({ answer: str, cites: arr(str), gaps: arr(str) }),
   suggest: obj({ categories: arr(obj({ name: str, parent: str, desc: str, why: str, items: arr(str) })) }),
+  sortq: obj({ groups: arr(obj({ name: str, kind: oneOf('owner', 'keep', 'subject'), answers: arr(str), numbers: arr(num) })) }),
 }
 
 export const SYSTEM = `You read a business's recorded conversations and turn them into a clean, traceable record.
@@ -152,4 +153,22 @@ Only branches that at least 3 items need. Prefer a few clear branches over many 
 
 Items (id | filed at now | text):
 ${items.map(i => `${i.id} | ${i.where} | ${i.text}`).join('\n')}`
+}
+
+export function sortPrompt({ library, questions }) {
+  return `Business: ${library.name}
+
+Below are the open questions this team still has to answer. Sort them so someone can answer similar ones in one pass, on one screen. Put every question in exactly one group, using its number.
+
+Kinds of group:
+- "owner": the only thing to settle is who does it or who owns it. Name by the work, e.g. "Who owns the brand files".
+- "keep": the choice is whether to go ahead, drop it or leave it for later. Name by the area, e.g. "Keep or drop: AI tools".
+- "subject": anything else, grouped by shared subject so one person can settle the lot in one sitting, e.g. "Report cover layout".
+
+Sort by what the answer needs, not by shared words. A question about who is the audience is not an owner question. If a question fits owner or keep and a subject, owner or keep wins.
+"name": 2 to 6 plain words. "answers": for owner and keep groups, the 2 to 6 answers most of the group could share, in the words the options use (for example the role names as written); for subject groups, an empty list. "numbers": the question numbers.
+Aim for groups of 4 to 25; a question that fits nowhere still goes in the closest subject group.
+
+Questions (number | where | question | options):
+${questions.map(q => `${q.n} | ${q.where} | ${q.q} | ${(q.options || []).join(' / ')}`).join('\n')}`
 }

@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, go } from './api.js'
 import Theme from './Theme.jsx'
-import { questionsInBranch } from '../shared/library-questions.js'
+import Web from './Web.jsx'
+import Jump from './Jump.jsx'
+import Fast from './Fast.jsx'
+import Items from './LibItems.jsx'
+import { EFFECTS, Fx, useFxState, fly } from './fx.js'
+import { questionBranches, questionsInBranch } from '../shared/library-questions.js'
 
 // Conversations mode: the business tree as a spider web you can step into, and one list of what it still needs from you.
 const STATUS = { unsettled: 'Never settled', open: 'Open', assumed: 'Assumed', decided: 'Decided', done: 'Done' }
 const ORDER = ['unsettled', 'open', 'assumed', 'decided', 'done']
-const TYPE = { decision: 'Decision', open: 'Question', assumption: 'Assumption', todo: 'To do', idea: 'Idea', fact: 'Fact', preference: 'Preference' }
 const pct = x => Math.round((x || 0) * 100) + '%'
+// Where you are on the map lives in the address, so a reload keeps it and Back steps out.
+const readPlace = () => { const p = new URLSearchParams(location.search); return { focus: p.get('at'), selected: p.get('sel') } }
 
 function useLibrary(id) {
   const [v, setV] = useState(null)
@@ -26,18 +32,56 @@ function useLibrary(id) {
 
 export default function LibraryView({ id }) {
   const [v, err, reload] = useLibrary(id)
-  const [focus, setFocusRaw] = useState(null)
-  const [selected, setSelected] = useState(null)
-  const setFocus = f => { setFocusRaw(f); setSelected(null); setTab('needs') }
+  const [fx, fxSaved, setFxSaved, still] = useFxState()
+  const [place, setPlace] = useState(readPlace)
   const [tab, setTab] = useState('needs')
   const [link, setLink] = useState(null)
   const [busy, setBusy] = useState('')
+  const [jump, setJump] = useState(false)
+  const [hits, setHits] = useState(null)
+  const [topic, setTopic] = useState(null)
+  const [away, setAway] = useState({}) // answers on their way: gone from the list at once, off the map's counts when they land
+  const [toast, setToast] = useState(null)
+  const landing = useRef(new Set()), timer = useRef(null)
   const index = useMemo(() => {
     const m = new Map()
     const walk = (ns, parent, depth) => ns.forEach(n => { m.set(n.id, { ...n, parent, depth }); walk(n.children || [], n.id, depth + 1) })
     if (v) walk(v.tree.branches, null, 0)
     return m
   }, [v?.tree])
+  const focus = index.has(place.focus) ? place.focus : null
+  const selected = index.has(place.selected) ? place.selected : null
+  const moveTo = (f, sel = null) => {
+    setPlace({ focus: f, selected: sel })
+    const q = new URLSearchParams()
+    if (f) q.set('at', f)
+    if (sel) q.set('sel', sel)
+    const qs = q.toString()
+    history.pushState({}, '', location.pathname + (qs ? '?' + qs : ''))
+  }
+  const keepFast = () => setTab(t => t === 'fast' ? t : 'needs')
+  const setFocus = f => { moveTo(f); keepFast() }
+  // A branch with parts opens as its own web; one without parts is selected in place and shown in the panel.
+  const pick = bid => { const n = index.get(bid); if (n?.children?.length) setFocus(bid); else { moveTo(n ? n.parent : null, bid); keepFast() } }
+
+  useEffect(() => {
+    const on = () => setPlace(readPlace())
+    const mouse = e => { if (e.button === 3) history.back(); if (e.button === 4) history.forward() }
+    addEventListener('popstate', on); addEventListener('mouseup', mouse)
+    return () => { removeEventListener('popstate', on); removeEventListener('mouseup', mouse) }
+  }, [])
+  useEffect(() => {
+    const keys = e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setJump(true) }
+      if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); history.back() }
+      if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); history.forward() }
+      if (e.key === 'Escape' && !jump && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { if (selected) moveTo(focus); else if (focus) setFocus(index.get(focus).parent) }
+    }
+    addEventListener('keydown', keys)
+    return () => removeEventListener('keydown', keys)
+  }, [focus, selected, jump, index])
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 14000); return () => clearTimeout(t) }, [toast])
+
   if (err) return <div className="empty">{err}</div>
   if (!v) return <div className="empty">Loading...</div>
 
@@ -45,57 +89,134 @@ export default function LibraryView({ id }) {
     setBusy(what)
     try { await api(`library/${id}/${what}`, body); await reload() } catch (e) { alert(e.message) } finally { setBusy('') }
   }
+  // Answers leave at once and the record catches up behind them, so a run of answers doesn't wait on a full reload each.
+  const flyTo = (list, ids) => {
+    setAway(a => ({ ...a, ...Object.fromEntries(ids.map(x => [x, 'flying'])) }))
+    Promise.all(list.map((e, k) => new Promise(r => setTimeout(r, k * 80)).then(() => fly(e.rect, e.branch, index, e.text, fx.packets))))
+      .then(() => setAway(a => { const n = { ...a }; for (const x of ids) if (n[x]) n[x] = 'landed'; return n }))
+  }
+  const sent = ids => {
+    ids.forEach(x => landing.current.add(x))
+    clearTimeout(timer.current)
+    timer.current = setTimeout(async () => {
+      const done = [...landing.current]
+      landing.current.clear()
+      await reload()
+      setAway(a => { const n = { ...a }; done.forEach(x => delete n[x]); return n })
+    }, 900)
+  }
+  const failed = ids => setAway(a => { const n = { ...a }; ids.forEach(x => delete n[x]); return n })
+  const undo = async batch => { setToast(null); await api(`library/${id}/change`, { kind: 'undoAnswers', batch }); await reload() }
+  const onSaved = (result, ids) => {
+    if (!result) return failed(ids)
+    sent(ids)
+    if (result.saved) setToast({ text: `Saved ${result.saved} answer${result.saved === 1 ? '' : 's'}`, batch: result.batch })
+  }
+  const go2 = r => {
+    setJump(false)
+    pick(r.branch)
+    if (r.kind !== 'branch') { setTopic(r.topic || null); setTab('branch') }
+  }
+
   const running = v.job?.running
   const c = v.counts
-  // A branch with parts opens as its own web; one without parts is selected in place and shown in the panel.
-  const pick = bid => { const n = index.get(bid); if (n?.children?.length) setFocus(bid); else { setFocusRaw(n ? n.parent : null); setSelected(bid) } setTab('needs') }
-
+  const live = v.questions.filter(q => !away[q.id])
+  const landed = {}
+  for (const q of v.questions) if (away[q.id] === 'landed') {
+    landed[''] = (landed[''] || 0) + 1
+    const ups = new Set()
+    for (const b of questionBranches(q, v.threads)) for (let n = index.get(b); n; n = index.get(n.parent)) ups.add(n.id)
+    for (const b of ups) landed[b] = (landed[b] || 0) + 1
+  }
   const scope = selected || focus
-  const scopedQuestions = questionsInBranch(v.questions, v.threads, index, scope)
+  const scopedQuestions = questionsInBranch(live, v.threads, index, scope)
+  const rules = v.rules || []
+  const checks = rules.reduce((n, r) => n + Math.min(r.checked, r.need), 0), checksNeed = rules.reduce((n, r) => n + r.need, 0)
+  const canSort = !v.member || v.ai?.loggedIn
 
   return (
-    <main className="lib">
+    <Fx.Provider value={fx}>
+    <main className={'lib' + Object.entries(fx).filter(e => e[1]).map(e => ' fx-' + e[0]).join('')}>
       <header className="lib-top">
         {!v.member && <a className="brand" href="/" onClick={e => { e.preventDefault(); go('/') }}><i />Thinking System</a>}
         <div className="lib-title">
           <h1>{v.name}</h1>
-          <span className="sub">{c.calls} calls · {c.items} items · {c.filed} filed · {c.guessed} best guesses · {c.links} links · {c.threads} topics · ${c.cost.toFixed(2)} spent</span>
+          <span className="sub" title={`${c.filed} filed · ${c.guessed} best guesses · ${c.links} links${v.member ? '' : ` · $${c.cost.toFixed(2)} spent`}`}>{c.calls} calls · {c.items} items · {c.threads} topics · {checks} of {checksNeed} spot checks</span>
         </div>
         <div className="lib-actions">
           {v.member && !v.ai?.loggedIn && <ConnectAI v={v} act={act} busy={busy} />}
           {v.sync && <Sync v={v} busy={busy} act={act} />}
           {!v.member && <>
-          <button className="btn" disabled={running || !!busy} onClick={() => act('scan')}>Check for new transcripts</button>
-          {v.estimate.calls > 0 && <button className="primary" disabled={running || !!busy} onClick={() => act('process')}>Read {v.estimate.calls} new transcript{v.estimate.calls > 1 ? 's' : ''} (~${v.estimate.usd.toFixed(2)})</button>}
+          <button className="btn" disabled={running || !!busy} onClick={() => act('scan')}>Check for new</button>
+          {v.estimate.calls > 0 && <button className="primary" disabled={running || !!busy} title="This covers reading only. Rewriting the topics those calls touch costs more, and a big document can touch every branch." onClick={() => act('process')}>Read {v.estimate.calls} new (from ${v.estimate.usd.toFixed(2)})</button>}
           {v.pending > 0 && <button className="primary" disabled={running || !!busy} title="Places everything not yet filed again with your answers as examples, then rewrites only the topics whose items moved" onClick={() => act('refresh')}>Update with {v.pending} change{v.pending > 1 ? 's' : ''}</button>}
           </>}
           <Theme />
         </div>
       </header>
       {v.job && (running || v.job.log.length > 0) && <Job job={v.job} onStop={() => act('stop')} />}
-      <div className="lib-body">
+      <div className={'lib-body' + (tab === 'fast' ? ' wide' : '')}>
         <section className="lib-map">
-          <Crumbs index={index} focus={focus} setFocus={setFocus} name={v.name} />
-          <Web v={v} index={index} focus={focus} selected={selected} setFocus={setFocus} onPick={pick} link={link} onLink={l => { setLink(l); setTab('link') }} />
+          <div className="lib-map-top">
+            <Crumbs index={index} focus={focus} selected={selected} setFocus={setFocus} onPick={pick} name={v.name} />
+            <div className="lib-tools">
+              <button className="ghost" onClick={() => setJump(true)}>Jump<kbd>{/Mac/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd></button>
+              <Effects fx={fx} saved={fxSaved} set={setFxSaved} still={still} />
+            </div>
+          </div>
+          {jump && <Jump v={v} index={index} onHits={setHits} onGo={go2} onClose={() => setJump(false)} />}
+          <Web v={v} index={index} focus={focus} selected={selected} setFocus={setFocus} onPick={pick} link={link} onLink={l => { setLink(l); setTab('link') }} hits={hits} landed={landed} />
           <WebList v={v} index={index} focus={focus} setFocus={setFocus} onPick={pick} />
-          <p className="lib-legend sub"><b className="dot red" /> questions waiting on you there <b className="dot" /> items that live there <b className="line" /> items that touch both branches. Click a branch to step into it; click the middle to step back out.</p>
+          <p className="lib-legend sub"><b className="dot red" /> questions waiting on you there <b className="dot" /> items that live there <b className="line" /> items that touch both. Esc steps out.</p>
         </section>
         <aside className="lib-panel">
-          <div className="seg lib-tabs" role="tablist">
-            {[['needs', `Needs you${scopedQuestions.length ? ` (${scopedQuestions.length})` : ''}`], ['branch', 'Branch'], ...(link ? [['link', 'Connection']] : []), ['cats', `Categories${v.proposals?.length ? ` (${v.proposals.length} proposed)` : ''}`], ['find', 'Find'], ['links', 'Applies elsewhere'], ['calls', 'Transcripts'], ...(v.sync || v.log?.length ? [['changes', 'Changes']] : [])].map(([k, label]) =>
-              <button key={k} role="tab" aria-checked={tab === k} onClick={() => setTab(k)}>{label}</button>)}
-          </div>
-          {tab === 'needs' && <Needs key={scope || 'all'} v={v} questions={scopedQuestions} scope={scope} onAll={() => setFocus(null)} index={index} id={id} reload={reload} onPlace={pick} />}
-          {tab === 'branch' && <Branch v={v} index={index} focus={selected || focus} setFocus={pick} edit={body => act('change', body)} />}
-          {tab === 'find' && <Find v={v} id={id} index={index} />}
+          <Tabs tab={tab} setTab={setTab} main={[['needs', `Needs you${scopedQuestions.length ? ` ${scopedQuestions.length}` : ''}`], ['fast', 'Sort fast'], ['branch', 'Branch'], ['find', 'Find']]}
+            more={[...(link ? [['link', 'Connection']] : []), ['cats', `Categories${v.proposals?.length ? ` (${v.proposals.length} proposed)` : ''}`], ['links', 'Applies elsewhere'], ['calls', 'Transcripts'], ...(v.sync || v.log?.length ? [['changes', 'Changes']] : [])]} />
+          {tab === 'needs' && <Needs key={scope || 'all'} v={v} questions={scopedQuestions} scope={scope} onAll={() => setFocus(null)} index={index} id={id} reload={reload} onPlace={pick} flyTo={flyTo} sent={sent} failed={failed} />}
+          {tab === 'fast' && <Fast key={scope || 'all'} v={v} id={id} questions={scopedQuestions} index={index} canSort={canSort} busy={busy} act={act} onSaved={onSaved} flyTo={flyTo} />}
+          {tab === 'branch' && <Branch v={v} index={index} focus={selected || focus} setFocus={pick} edit={body => act('change', body)} topic={topic} />}
+          {tab === 'find' && <Find v={v} id={id} index={index} onOpen={t => go2({ kind: 'topic', branch: t.branch, topic: t.id })} />}
           {tab === 'links' && <Links v={v} running={running} onRun={() => act('crosscheck')} />}
           {tab === 'calls' && <Calls v={v} />}
-          {tab === 'changes' && <Changes v={v} />}
+          {tab === 'changes' && <Changes v={v} onUndo={undo} />}
           {tab === 'link' && link && <Connection v={v} index={index} link={link} onClose={() => { setLink(null); setTab('branch') }} />}
           {tab === 'cats' && <Categories v={v} index={index} act={act} busy={busy} onPick={pick} />}
         </aside>
       </div>
+      {toast && <div className="lib-toast" role="status"><span>{toast.text}</span>{toast.batch && <button className="ghost" onClick={() => undo(toast.batch)}>Undo</button>}<button className="ghost" aria-label="Dismiss" onClick={() => setToast(null)}>×</button></div>}
     </main>
+    </Fx.Provider>
+  )
+}
+
+// The work you do all day stays in view; the rest sits under More, so tabs never wrap or move.
+function Tabs({ tab, setTab, main, more }) {
+  const [open, setOpen] = useState(false)
+  const inMore = more.find(([k]) => k === tab)
+  return (
+    <div className="seg lib-tabs" role="tablist">
+      {main.map(([k, label]) => <button key={k} role="tab" aria-checked={tab === k} onClick={() => setTab(k)}>{label}</button>)}
+      <div className="lib-more">
+        <button role="tab" aria-checked={!!inMore} aria-expanded={open} onClick={() => setOpen(!open)}>{inMore ? inMore[1].replace(/ \(.*/, '') : 'More'} ▾</button>
+        {open && <div className="lib-more-menu">{more.map(([k, label]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setTab(k); setOpen(false) }}>{label}</button>)}</div>}
+      </div>
+    </div>
+  )
+}
+
+// Every effect can be switched off on this computer.
+function Effects({ fx, saved, set, still }) {
+  const [open, setOpen] = useState(false)
+  const allOff = EFFECTS.every(([k]) => saved[k] === false)
+  return (
+    <div className="lib-fx">
+      <button className="ghost" aria-expanded={open} onClick={() => setOpen(!open)}>Effects</button>
+      {open && <div className="lib-fx-menu">
+        {still && <p className="sub">Reduced motion is on in your system settings, so moving effects stay off.</p>}
+        {EFFECTS.map(([k, label]) => <label key={k}><input type="checkbox" checked={!!fx[k]} disabled={still && k !== 'grid'} onChange={e => set({ ...saved, [k]: e.target.checked })} />{label}</label>)}
+        <button className="ghost" onClick={() => set(Object.fromEntries(EFFECTS.map(([k]) => [k, allOff])))}>{allOff ? 'Turn all on' : 'Turn all off'}</button>
+      </div>}
+    </div>
   )
 }
 
@@ -195,7 +316,7 @@ function Categories({ v, index, act, busy, onPick }) {
 }
 
 // Who changed what, newest first, with what was there before.
-function Changes({ v }) {
+function Changes({ v, onUndo }) {
   const [who, setWho] = useState('')
   const people = [...new Set(v.log.map(c => c.by))]
   const list = v.log.filter(c => !who || c.by === who)
@@ -208,6 +329,7 @@ function Changes({ v }) {
           <div><b>{c.by}</b> <span className="sub">{new Date(c.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>{c.error && <span className="tag red" title={c.error}>not applied</span>}</div>
           <p>{c.what || c.kind}</p>
           {(c.before || c.after) && <div className="lib-diff">{c.before && <del>{c.before}</del>}{c.after && <ins>{c.after}</ins>}</div>}
+          {c.undo?.length > 0 && (c.undone ? <span className="sub">Undone</span> : <button className="ghost" onClick={() => onUndo(c.id)}>Undo this batch</button>)}
         </li>))}</ol>
     </div>
   )
@@ -228,88 +350,14 @@ function Job({ job, onStop }) {
   )
 }
 
-function Crumbs({ index, focus, setFocus, name }) {
+function Crumbs({ index, focus, selected, setFocus, onPick, name }) {
   const trail = []
-  for (let n = index.get(focus); n; n = index.get(n.parent)) trail.unshift(n)
+  for (let n = index.get(selected || focus); n; n = index.get(n.parent)) trail.unshift(n)
   return (
     <nav className="lib-crumbs">
       <button className="ghost" onClick={() => setFocus(null)}>{name}</button>
-      {trail.map(n => <span key={n.id}>›<button className="ghost" onClick={() => setFocus(n.id)}>{n.name}</button></span>)}
+      {trail.map(n => <span key={n.id}>›<button className="ghost" onClick={() => onPick(n.id)}>{n.name}</button></span>)}
     </nav>
-  )
-}
-
-// The spider web: the focus in the middle, its branches around it, and each branch's own parts as small satellites.
-function Web({ v, index, focus, selected, setFocus, onPick, link, onLink }) {
-  const [hover, setHover] = useState(-1)
-  const [every, setEvery] = useState(false)
-  const node = focus ? index.get(focus) : null
-  const kids = (node ? node.children : v.tree.branches) || []
-  const W = 900, H = 640, cx = W / 2, cy = H / 2
-  const R = kids.length > 10 ? 250 : 220
-  const stat = id => v.byBranch[id] || { items: 0, need: 0, now: 0 }
-  const here = focus ? stat(focus) : { items: v.counts.filed + v.counts.guessed, need: v.questions.length }
-  const max = Math.max(1, ...kids.map(k => stat(k.id).items))
-  const pos = kids.map((k, i) => { const a = -Math.PI / 2 + (i / kids.length) * Math.PI * 2; return { a, x: cx + Math.cos(a) * R * 1.45, y: cy + Math.sin(a) * R } })
-  // Items that live under one branch here and touch another: drawn as threads between the two.
-  const kidOf = id => { for (let n = index.get(id); n; n = index.get(n.parent)) if ((n.parent || null) === (focus || null)) return kids.findIndex(k => k.id === n.id); return -1 }
-  const pairs = {}
-  for (const i of Object.values(v.items)) for (const l of i.links || []) {
-    const a = kidOf(i.branch), b = kidOf(l)
-    if (a < 0 || b < 0 || a === b) continue
-    const key = Math.min(a, b) + '|' + Math.max(a, b)
-    pairs[key] = (pairs[key] || 0) + 1
-  }
-  const links = Object.entries(pairs).sort((x, y) => y[1] - x[1]).slice(0, every ? 999 : 18)
-  const most = Math.max(1, ...links.map(l => l[1]))
-  return (
-    <>
-    {Object.keys(pairs).length > 18 && <div className="lib-map-bar"><span className="sub">Click a line to see what connects two branches; point at a branch to light up its lines.</span>
-      <button className="ghost" onClick={() => setEvery(!every)}>{every ? 'Strongest links only' : `Show all ${Object.keys(pairs).length} links`}</button></div>}
-    <svg className="lib-web" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Business tree">
-      {[0.55, 1, 1.32].map(f => <ellipse key={f} cx={cx} cy={cy} rx={R * f * 1.45} ry={R * f} className="web-ring" />)}
-      {links.map(([key, n]) => {
-        const [a, b] = key.split('|').map(Number), p = pos[a], q = pos[b]
-        const mx = cx + ((p.x + q.x) / 2 - cx) * 0.35, my = cy + ((p.y + q.y) / 2 - cy) * 0.35
-        const on = link && [kids[a].id, kids[b].id].sort().join('|') === [link.a, link.b].sort().join('|')
-        const d = `M${p.x},${p.y} Q${mx},${my} ${q.x},${q.y}`
-        // A wide invisible line on top, so a thin link is still easy to click.
-        return <g key={key} className="web-link-g" onClick={() => onLink({ a: kids[a].id, b: kids[b].id })}>
-          <path d={d} className={'web-link' + (on ? ' on' : hover >= 0 && hover !== a && hover !== b ? ' dim' : '')} style={{ strokeWidth: 2 + 7 * Math.sqrt(n / most), opacity: 0.25 + 0.6 * n / most }} />
-          <path d={d} className="web-hit"><title>{n} item(s) touch both {kids[a].name} and {kids[b].name}. Click to see them.</title></path>
-        </g>
-      })}
-      {kids.map((k, i) => {
-        const { a, x, y } = pos[i]
-        const st = stat(k.id), need = st.need
-        const r = 16 + 22 * Math.sqrt(st.items / max)
-        const sub = k.children || []
-        return (
-          <g key={k.id} className={'web-node' + (st.items ? '' : ' empty')} onClick={() => sub.length ? setFocus(k.id) : onPick(k.id)} tabIndex={0} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
-            onKeyDown={e => e.key === 'Enter' && (sub.length ? setFocus(k.id) : onPick(k.id))}>
-            <line x1={cx} y1={cy} x2={x} y2={y} className="web-spoke" />
-            {sub.map((g, j) => {
-              const b = a + ((j + 0.5) / sub.length - 0.5) * Math.min(1.1, sub.length * 0.14)
-              const gx = x + Math.cos(b) * (r + 26), gy = y + Math.sin(b) * (r + 26)
-              const gs = stat(g.id)
-              return <g key={g.id}><line x1={x} y1={y} x2={gx} y2={gy} className="web-thread" /><circle cx={gx} cy={gy} r={gs.items ? 4.5 : 3} className={gs.need ? 'web-sat red' : gs.items ? 'web-sat on' : 'web-sat'} /></g>
-            })}
-            <circle cx={x} cy={y} r={r} className={'web-bubble' + (selected === k.id ? ' sel' : '')} />
-            <text x={x} y={y + 4} className="web-count">{st.items || ''}</text>
-            {need > 0 && <g><rect x={x + r * 0.72 - (6 + String(need).length * 3.6)} y={y - r * 0.72 - 10} width={12 + String(need).length * 7.2} height={20} rx={10} className="web-need" /><text x={x + r * 0.72} y={y - r * 0.72 + 4} className="web-need-n">{need}</text></g>}
-            <text x={x} y={Math.sin(a) > 0.3 ? y - r - 10 : y + r + 18} className="web-label">{k.name}</text>
-            <title>{k.name}: {st.items} items ({st.filed || 0} filed), {st.need} question(s) for you ({st.now} now){k.desc ? '\n' + k.desc : ''}</title>
-          </g>
-        )
-      })}
-      <g className="web-center" onClick={() => focus && setFocus(node.parent)} style={{ cursor: focus ? 'pointer' : 'default' }}>
-        <ellipse cx={cx} cy={cy} rx={118} ry={66} />
-        <text x={cx} y={cy - 8} className="web-center-name">{(node?.name || v.name).slice(0, 26)}</text>
-        <text x={cx} y={cy + 14} className="web-center-sub">{here.items} items · {here.need} question{here.need === 1 ? '' : 's'} for you</text>
-        {focus && <text x={cx} y={cy + 34} className="web-center-sub">← step out</text>}
-      </g>
-    </svg>
-    </>
   )
 }
 
@@ -330,7 +378,7 @@ function WebList({ v, index, focus, setFocus, onPick }) {
 const claimed = new Map()
 
 // One question at a time: the system says what it still needs, you answer, the next one comes.
-function Needs({ v, questions, scope, onAll, index, id, reload, onPlace }) {
+function Needs({ v, questions, scope, onAll, index, id, reload, onPlace, flyTo, sent, failed }) {
   const [k, setK] = useState(0)
   const [all, setAll] = useState(false)
   const [later, setLater] = useState(false)
@@ -339,8 +387,16 @@ function Needs({ v, questions, scope, onAll, index, id, reload, onPlace }) {
   const q = qs[Math.min(k, qs.length - 1)] || {}
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const card = useRef(null)
   const send = async body => {
-    setBusy(true); setError('')
+    setError('')
+    if ((q.kind === 'thread' || q.kind === 'place') && !body.skip) {
+      const qid = q.id
+      flyTo([{ rect: card.current?.getBoundingClientRect(), branch: questionBranches(q, v.threads)[0], text: q.q }], [qid])
+      try { await api(`library/${id}/answer`, { qid, ...body }); sent([qid]) } catch (e) { setError(e.message); failed([qid]) }
+      return
+    }
+    setBusy(true)
     try { await api(`library/${id}/answer`, { qid: q.id, ...body }); await reload() }
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
@@ -367,7 +423,7 @@ function Needs({ v, questions, scope, onAll, index, id, reload, onPlace }) {
         <span className="sub">{qs.length} left{all ? '' : `, showing ${Math.min(k, qs.length - 1) + 1}`}</span>
         <button className="ghost" onClick={() => setAll(!all)}>{all ? 'One at a time' : 'See the list'}</button>
       </div>
-      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <fieldset ref={card} disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       {q.skipped && <p className="sub">Skipped for now — still unanswered.</p>}
       {all
         ? <ol className="lib-qlist">{qs.map((x, j) => <li key={x.id}><button className="ghost" onClick={() => { setK(j); setAll(false) }}>
@@ -391,6 +447,7 @@ function ThreadQ({ q, v, send, skip }) {
       <span className={'tag' + (q.status === 'unsettled' ? ' red' : '')}>{STATUS[q.status]}</span><span className="sub">{q.where}</span>
       <h3>{q.q}</h3>
       <p className="sub">{q.why}</p>
+      {q.decided && <p className="fast-has"><b>This topic already has a decision. Saving replaces it:</b> {q.decided}</p>}
       <p className="lib-sum"><b>{t.title}.</b> {t.summary}</p>
       {q.ways?.length > 0 && <div className="lib-ways"><span className="sub">The ways it was talked about</span><ul>{q.ways.map((w, j) => <li key={j}>{w}</li>)}</ul></div>}
       {q.options?.length > 0 && <div className="lib-opts">{q.options.map(o => <button key={o} className={'btn' + (a === o ? ' on' : '')} onClick={() => setA(o)}>{o}</button>)}</div>}
@@ -504,22 +561,14 @@ function PlaceQ({ q, v, index, send, skip }) {
   )
 }
 
-function Items({ ids, v }) {
-  return (
-    <ul className="lib-items">
-      {ids.map(x => v.items[x]).filter(Boolean).sort((a, b) => b.date.localeCompare(a.date)).map(i => (
-        <li key={i.id}>
-          <span className="tag dashed">{TYPE[i.type]}</span>{!i.filed && i.branch !== 'none' && <span className="tag dashed" title="Placed by a rule that hasn't yet proven itself in spot checks">best guess</span>}<span className="sub">{i.date}{i.who ? ' · ' + i.who : ''}</span>
-          <p>{i.text}</p>
-          {i.quote && <blockquote>“{i.quote}”<cite>{i.file}{i.at ? ' at ' + i.at : ''}</cite></blockquote>}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function Branch({ v, index, focus, setFocus, edit }) {
-  const [open, setOpen] = useState(null)
+function Branch({ v, index, focus, setFocus, edit, topic }) {
+  const [open, setOpen] = useState(topic)
+  const list = useRef(null)
+  useEffect(() => {
+    if (!topic) return
+    setOpen(topic)
+    requestAnimationFrame(() => list.current?.querySelector(`[data-topic="${CSS.escape(topic)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+  }, [topic, focus])
   const [form, setForm] = useState(null)
   const under = id => id === focus || !focus || id.startsWith(focus + '.')
   const ts = Object.values(v.threads).filter(t => under(t.branch))
@@ -536,7 +585,7 @@ function Branch({ v, index, focus, setFocus, edit }) {
   }
   const conns = Object.values(conn).sort((a, b) => b.ids.size - a.ids.size)
   return (
-    <div className="lib-branch">
+    <div className="lib-branch" ref={list}>
       <div className="lib-branch-head">
         <h3>{node?.name || v.name}</h3>
         {node && <button className="ghost" onClick={() => setForm({ kind: 'editBranch', branch: node.id, name: node.name, desc: node.desc || '' })}>Edit</button>}
@@ -560,7 +609,7 @@ function Branch({ v, index, focus, setFocus, edit }) {
           <section key={st}>
             <h4>{STATUS[st]} <span className="sub">{list.length}</span></h4>
             {list.map(t => (
-              <article key={t.id} className={'lib-thread' + (open === t.id ? ' open' : '')}>
+              <article key={t.id} data-topic={t.id} className={'lib-thread' + (open === t.id ? ' open' : '')}>
                 <button className="lib-thread-head" onClick={() => setOpen(open === t.id ? null : t.id)}>
                   <b>{t.title}</b><span className="sub">{t.first === t.last ? t.last : `${t.first} → ${t.last}`} · {t.items.length} said{t.unconfirmed ? ` · ${t.unconfirmed} not yet confirmed where they belong` : ''}</span>
                 </button>
@@ -587,7 +636,7 @@ function Branch({ v, index, focus, setFocus, edit }) {
   )
 }
 
-function Find({ v, id }) {
+function Find({ v, id, onOpen }) {
   const [q, setQ] = useState('')
   const [res, setRes] = useState(null)
   const [sense, setSense] = useState(null)
@@ -607,7 +656,7 @@ function Find({ v, id }) {
         {answer.cites?.length > 0 && <Items ids={answer.cites.filter(c => v.items[c])} v={v} />}</div>}
       {res && <>
         {res.senses.length > 1 && <div className="lib-chips"><span className="sub">Used in {res.senses.length} senses:</span>{res.senses.map(s => <button key={s.sense} className={'btn' + (sense === s.sense ? ' on' : '')} onClick={() => setSense(sense === s.sense ? null : s.sense)}>{s.sense} <span className="sub">{s.ids.length}</span></button>)}</div>}
-        {!sense && res.threads.length > 0 && <section><h4>Topics</h4>{res.threads.map(t => <article key={t.id} className="lib-thread"><b>{t.title}</b> <span className="tag dashed">{STATUS[t.status]}</span><p className="sub">{t.where}</p><p>{t.summary}</p></article>)}</section>}
+        {!sense && res.threads.length > 0 && <section><h4>Topics</h4>{res.threads.map(t => <article key={t.id} className="lib-thread"><b>{t.title}</b> <span className="tag dashed">{STATUS[t.status]}</span><p className="sub">{t.where}</p><p>{t.summary}</p><button className="ghost" onClick={() => onOpen(t)}>Open on the map</button></article>)}</section>}
         <section><h4>Said <span className="sub">{shown.length}</span></h4><Items ids={shown.map(i => i.id)} v={v} /></section>
       </>}
     </div>

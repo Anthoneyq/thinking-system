@@ -55,6 +55,7 @@ const LIBRARY_ACTIONS = {
   connect: () => connectAI(),
   aicheck: () => aiStatus(true),
   suggest: id => library.suggestCategories(id),
+  sortq: id => library.sortQuestions(id),
   ask: (id, b) => library.ask(id, b.question, b),
 }
 

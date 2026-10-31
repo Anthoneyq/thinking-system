@@ -74,6 +74,8 @@ Point it at a folder of recorded calls (Teams or Zoom `.vtt`, Teams Word `.docx`
 - **Lets you work branch by branch.** Click a bubble to see only questions in that branch and its parts, including the relevant items from the current spot-check sample. Step out to widen the scope, or choose **All questions**. **Branch** still shows the topic details.
 - **Skip for now** moves an unanswered question or individual spot-check item to **Later** on your copy. It does not approve the filing or answer for the team. Open Later to answer it when you can.
 - **Asks what it still needs**, one question at a time, until there is nothing left: never-settled topics, the spot check, and overlaps in the tree (merge two branches, or say how they differ). Filing is never asked item by item, so questions don't grow with every call.
+- **Sort fast** puts similar questions on one screen (who owns it, keep or drop, same subject), so one answer can settle a group. A topic that already has a decision starts unticked, and a batch undoes in one step.
+- **Jump** (Ctrl K) reaches any branch, topic or line said and lights it up on the map. Your place stays in the address, so reload and Back work. **Effects** switches the map's motion on or off per computer, and reduced motion is respected.
 - **Finds** where anything was said, split by the sense a word was used in, and answers questions from the record with sources.
 - **Cross-checks** (on demand, Opus): what was worked out in one part of the business that applies to another.
 
@@ -92,7 +94,7 @@ No names in the record: add `"names": { "Jane Doe": "Principal 1", "Jane": "Prin
 - `server/engine.js`: run state, scheduler and the loop (frame, branch, come together, grow, ask, review, decide).
 - `server/prompts.js`: the rules, step prompts and strict JSON schemas. `server/methods.js`: the 20 thinking methods it chooses from.
 - `server/jev.js`: the Jev judgments (method picks, the gate, question weighing, reply checks).
-- `server/library/`: Conversations mode (parse calls, read, links, file level by level, filing rules and spot checks, tie topics, questions, cross-check, Markdown record). `src/LibraryView.jsx`: the spider web and the questions panel.
+- `server/library/`: Conversations mode (parse calls, read, links, file level by level, filing rules and spot checks, tie topics, questions, cross-check, Markdown record). `src/LibraryView.jsx`: the page and questions panel. `src/Web.jsx`: the spider web. `src/Fast.jsx`: Sort fast. `src/fx.js`: the effects.
 - `server/models.js`: calls `claude -p` lean (no tools, MCP or settings), or Codex, or a dry run.
 - `src/`: React + React Flow. Map view (radial, live) and Steps view.
 - `app/server.mjs` and `dist/` are built files, committed so the plugin runs without `npm install`. Rebuild with `npm install && npm run build`.
